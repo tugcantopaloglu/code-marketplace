@@ -2,6 +2,9 @@
 {{- if .Values.persistence.artifactory.enabled }}
 {{- fail "The offline importer requires local PVC storage" }}
 {{- end }}
+{{- if not (has .Values.importer.publisherPolicy.mode (list "verified" "allowlist" "any")) }}
+{{- fail "importer.publisherPolicy.mode must be verified, allowlist, or any" }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -50,6 +53,14 @@ spec:
                 - /sandbox-trust/trust.json
                 - --sandbox-max-age
                 - {{ .Values.importer.sandboxMaxAge | quote }}
+                - --publisher-mode
+                - {{ .Values.importer.publisherPolicy.mode | quote }}
+                - --publisher-max-age
+                - {{ .Values.importer.publisherPolicy.maxAge | quote }}
+                {{- if ne .Values.importer.publisherPolicy.mode "any" }}
+                - --publisher-policy
+                - /publisher-policy/policy.json
+                {{- end }}
               resources:
                 {{- toYaml .Values.importer.resources | nindent 16 }}
               volumeMounts:
@@ -67,6 +78,11 @@ spec:
                 - name: sandbox-trust
                   mountPath: /sandbox-trust
                   readOnly: true
+                {{- if ne .Values.importer.publisherPolicy.mode "any" }}
+                - name: publisher-policy
+                  mountPath: /publisher-policy
+                  readOnly: true
+                {{- end }}
           volumes:
             - name: incoming
               persistentVolumeClaim:
@@ -80,6 +96,14 @@ spec:
                 items:
                   - key: {{ .Values.importer.sandboxTrust.key | quote }}
                     path: trust.json
+            {{- if ne .Values.importer.publisherPolicy.mode "any" }}
+            - name: publisher-policy
+              configMap:
+                name: {{ required "importer.publisherPolicy.configMap is required for verified or allowlist mode" .Values.importer.publisherPolicy.configMap }}
+                items:
+                  - key: {{ .Values.importer.publisherPolicy.key | quote }}
+                    path: policy.json
+            {{- end }}
           {{- with .Values.nodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}

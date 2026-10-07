@@ -15,6 +15,7 @@ import (
 	"cdr.dev/slog"
 	"github.com/coder/code-marketplace/extensionsign"
 	"github.com/coder/code-marketplace/filelock"
+	"github.com/coder/code-marketplace/publisher"
 	"github.com/coder/code-marketplace/sandbox"
 	"github.com/coder/code-marketplace/storage"
 )
@@ -22,21 +23,23 @@ import (
 const ReceiptName = ".import-receipt.json"
 
 type Receipt struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	SHA256        string           `json:"sha256"`
-	SignatureHash string           `json:"signatureSha256"`
-	ImportedAt    time.Time        `json:"importedAt"`
-	Approval      sandbox.Approval `json:"sandbox"`
+	SchemaVersion int                 `json:"schemaVersion"`
+	SHA256        string              `json:"sha256"`
+	SignatureHash string              `json:"signatureSha256"`
+	ImportedAt    time.Time           `json:"importedAt"`
+	Approval      sandbox.Approval    `json:"sandbox"`
+	Publisher     *publisher.Approval `json:"publisher,omitempty"`
 }
 
 type Result struct {
-	File                string   `json:"file"`
-	Extension           string   `json:"extension,omitempty"`
-	SHA256              string   `json:"sha256,omitempty"`
-	Status              string   `json:"status"`
-	Reason              string   `json:"reason,omitempty"`
-	Dependencies        []string `json:"dependencies,omitempty"`
-	MissingDependencies []string `json:"missingDependencies,omitempty"`
+	File                string              `json:"file"`
+	Extension           string              `json:"extension,omitempty"`
+	SHA256              string              `json:"sha256,omitempty"`
+	Status              string              `json:"status"`
+	Reason              string              `json:"reason,omitempty"`
+	Dependencies        []string            `json:"dependencies,omitempty"`
+	MissingDependencies []string            `json:"missingDependencies,omitempty"`
+	Publisher           *publisher.Approval `json:"publisher,omitempty"`
 }
 
 type Summary struct {
@@ -45,15 +48,22 @@ type Summary struct {
 }
 
 type Options struct {
-	Incoming string
-	Storage  string
-	Policy   *sandbox.Policy
-	Logger   slog.Logger
+	Incoming        string
+	Storage         string
+	Policy          *sandbox.Policy
+	PublisherPolicy *publisher.Policy
+	Logger          slog.Logger
 }
 
 func Run(ctx context.Context, options Options) (*Summary, error) {
 	if options.Policy == nil || len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0 {
 		return nil, fmt.Errorf("trusted sandbox approval is mandatory for scheduled imports")
+	}
+	if options.PublisherPolicy == nil {
+		return nil, fmt.Errorf("publisher policy is mandatory; explicitly select any to disable publisher restrictions")
+	}
+	if err := options.PublisherPolicy.Validate(); err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(options.Storage, 0o755); err != nil {
 		return nil, err
@@ -120,7 +130,7 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".vsix") {
 			continue
 		}
-		result := importPackage(ctx, input, output, store, options.Policy, entry.Name())
+		result := importPackage(ctx, input, output, store, options.Policy, options.PublisherPolicy, entry.Name())
 		summary.Results = append(summary.Results, result)
 		failed = failed || result.Status == "failed" || result.Status == "conflict"
 	}
@@ -149,7 +159,7 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 	return summary, nil
 }
 
-func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, policy *sandbox.Policy, name string) Result {
+func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, policy *sandbox.Policy, publisherPolicy *publisher.Policy, name string) Result {
 	result := Result{File: name, Status: "rejected"}
 	vsix, err := read(input, name, storage.MaxPackageSize)
 	if err != nil {
@@ -196,12 +206,28 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		result.Reason = err.Error()
 		return result
 	}
+	var publisherReport []byte
+	if publisherPolicy.Mode != "any" {
+		publisherReport, err = read(input, base+".publisher.json", sandbox.MaxReportSize)
+		if err != nil {
+			return readFailure(result, err)
+		}
+	}
+	result.Publisher, err = publisherPolicy.Verify(publisherReport, vsix, signature, manifest, time.Now().UTC())
+	if err != nil {
+		result.Reason = err.Error()
+		return result
+	}
 	target := filepath.Join(identity.Publisher, identity.ID, version.String())
 	if _, err := output.Stat(target); err == nil {
 		data, err := read(output, filepath.Join(target, ReceiptName), sandbox.MaxReportSize)
 		var receipt Receipt
 		if err != nil || sandbox.Decode(data, &receipt) != nil || receipt.SchemaVersion != 1 || receipt.SHA256 != result.SHA256 || receipt.SignatureHash != hash(signature) {
 			result.Status, result.Reason = "conflict", "version already exists with different bytes or without a trusted import receipt"
+			return result
+		}
+		if publisherPolicy.Mode != "any" && receipt.Publisher == nil {
+			result.Status, result.Reason = "conflict", "existing version has no publisher provenance receipt; explicit migration is required"
 			return result
 		}
 		stored, err := read(output, filepath.Join(target, storage.ExtensionVSIXNameFromManifest(manifest)+".vsix"), storage.MaxPackageSize)
@@ -216,17 +242,21 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		result.Status, result.Reason = "failed", err.Error()
 		return result
 	}
-	receipt := Receipt{SchemaVersion: 1, SHA256: result.SHA256, SignatureHash: hash(signature), ImportedAt: time.Now().UTC(), Approval: *approval}
+	receipt := Receipt{SchemaVersion: 1, SHA256: result.SHA256, SignatureHash: hash(signature), ImportedAt: time.Now().UTC(), Approval: *approval, Publisher: result.Publisher}
 	data, err := json.Marshal(receipt)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
 		return result
 	}
-	_, err = store.AddExtension(ctx, manifest, vsix,
-		storage.File{RelativePath: storage.SignatureArchiveFilename(manifest), Content: signature},
-		storage.File{RelativePath: ReceiptName, Content: data},
-		storage.File{RelativePath: ".sandbox-report.json", Content: report},
-	)
+	files := []storage.File{
+		{RelativePath: storage.SignatureArchiveFilename(manifest), Content: signature},
+		{RelativePath: ReceiptName, Content: data},
+		{RelativePath: ".sandbox-report.json", Content: report},
+	}
+	if result.Publisher != nil {
+		files = append(files, storage.File{RelativePath: ".publisher-report.json", Content: publisherReport})
+	}
+	_, err = store.AddExtension(ctx, manifest, vsix, files...)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
 		return result

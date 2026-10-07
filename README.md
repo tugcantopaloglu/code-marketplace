@@ -189,7 +189,7 @@ signature integration test.
 Use the gated importer for scheduled imports from an offline share:
 
 ```console
-./code-marketplace import --incoming-dir ./incoming --extensions-dir ./extensions --sandbox-trust ./sandbox-trust.json
+./code-marketplace import --incoming-dir ./incoming --extensions-dir ./extensions --sandbox-trust ./sandbox-trust.json --publisher-policy ./publisher-policy.json
 ```
 
 Every VSIX requires a matching `.sigzip` and an authenticated clean
@@ -197,6 +197,13 @@ Every VSIX requires a matching `.sigzip` and an authenticated clean
 approval receipts, skips unchanged packages, and refuses to overwrite existing
 versions with different bytes. Missing dependencies are listed in
 `missingDependencies` after the batch finishes.
+
+Publisher admission defaults to verified Marketplace publishers. Configure an
+additional exact publisher-name or GUID allowlist, choose explicit `allowlist`
+mode, or disable publisher restrictions with `any` mode. A connected collector
+produces signed `.publisher.json` records bound to the exact VSIX and signature
+bytes. The importer verifies them offline. See [PUBLISHERS.md](PUBLISHERS.md)
+for collection, trust configuration, and policy modes.
 
 See [SANDBOX.md](SANDBOX.md) for the signed report contract, THOR integration
 boundary, public-key trust configuration, and legacy import migration.

@@ -14,6 +14,7 @@ import (
 	"cdr.dev/slog"
 	"github.com/coder/code-marketplace/filelock"
 	"github.com/coder/code-marketplace/ingest"
+	"github.com/coder/code-marketplace/publisher"
 	"github.com/coder/code-marketplace/sandbox"
 	"github.com/coder/code-marketplace/storage"
 	"github.com/coder/code-marketplace/testutil"
@@ -39,7 +40,7 @@ func TestOfflineImports(t *testing.T) {
 	write("rejected", "malicious", vsix)
 	require.NoError(t, os.WriteFile(filepath.Join(input, "waiting.vsix"), vsix, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(input, "incomplete.vsix.part"), vsix, 0o600))
-	options := ingest.Options{Incoming: input, Storage: destination, Policy: policy, Logger: slog.Make()}
+	options := ingest.Options{Incoming: input, Storage: destination, Policy: policy, PublisherPolicy: &publisher.Policy{Mode: "any"}, Logger: slog.Make()}
 	first, err := ingest.Run(context.Background(), options)
 	require.NoError(t, err)
 	require.Len(t, first.Results, 3)
@@ -84,6 +85,6 @@ func TestImportRequiresPolicyAndSeparateStorage(t *testing.T) {
 	public, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	directory := t.TempDir()
-	_, err = ingest.Run(context.Background(), ingest.Options{Incoming: directory, Storage: filepath.Join(directory, "published"), Policy: &sandbox.Policy{Keys: map[string]ed25519.PublicKey{"scanner": public}, MaxAge: time.Hour}})
+	_, err = ingest.Run(context.Background(), ingest.Options{Incoming: directory, Storage: filepath.Join(directory, "published"), Policy: &sandbox.Policy{Keys: map[string]ed25519.PublicKey{"scanner": public}, MaxAge: time.Hour}, PublisherPolicy: &publisher.Policy{Mode: "any"}})
 	require.ErrorContains(t, err, "separate")
 }

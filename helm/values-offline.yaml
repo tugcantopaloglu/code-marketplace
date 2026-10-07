@@ -12,6 +12,9 @@ importer:
     existingClaim: extension-incoming
   sandboxTrust:
     configMap: marketplace-sandbox-trust
+  publisherPolicy:
+    mode: verified
+    configMap: marketplace-publisher-policy
 
 ingress:
   enabled: true

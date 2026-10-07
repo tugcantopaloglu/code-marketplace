@@ -7,6 +7,10 @@ param(
     [string]$SandboxTrust,
     [string]$SandboxReport,
     [string]$PreviousSandboxReport,
+    [string]$PublisherPolicy,
+    [string]$PublisherReport,
+    [string]$PreviousPublisherReport,
+    [ValidateSet('verified','allowlist','any')][string]$PublisherMode = 'verified',
     [switch]$LegacyEmptySignatures,
     [string]$Binary = (Join-Path $PSScriptRoot '..\bin\code-marketplace.exe'),
     [string]$VSCodeDirectory = (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code')
@@ -19,6 +23,9 @@ foreach ($inputPath in @($VSIX, $Signature, $Binary)) {
 if ([bool]$PreviousVSIX -ne [bool]$PreviousSignature) { throw 'Provide both previous package and previous signature' }
 if ([bool]$SandboxTrust -ne [bool]$SandboxReport) { throw 'Provide both sandbox trust configuration and report' }
 if ($SandboxTrust -and $PreviousVSIX -and -not $PreviousSandboxReport) { throw 'Provide a sandbox report for the previous package' }
+if ([bool]$PublisherPolicy -ne [bool]$PublisherReport) { throw 'Provide both publisher policy and report' }
+if ($PublisherPolicy -and -not $SandboxTrust) { throw 'Publisher provenance integration tests require sandbox-gated imports' }
+if ($PublisherPolicy -and $PreviousVSIX -and -not $PreviousPublisherReport) { throw 'Provide publisher provenance for the previous package' }
 $Binary = (Resolve-Path -LiteralPath $Binary).Path
 $testRoot = Join-Path $env:TEMP ('code-marketplace-vscode-' + [guid]::NewGuid().ToString('N'))
 $isolatedCode = Join-Path $testRoot 'vscode'
@@ -50,14 +57,19 @@ $code = Join-Path $isolatedCode 'bin\code.cmd'
 & $code --version
 if ($LASTEXITCODE -ne 0) { throw 'Isolated VS Code did not start' }
 
-function Import-Package([string]$package, [string]$signatureFile, [string]$sandboxFile) {
+function Import-Package([string]$package, [string]$signatureFile, [string]$sandboxFile, [string]$publisherFile) {
     $incoming = Join-Path $testRoot ('incoming-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $incoming | Out-Null
     Copy-Item -LiteralPath $package -Destination (Join-Path $incoming 'package.vsix')
     Copy-Item -LiteralPath $signatureFile -Destination (Join-Path $incoming 'package.sigzip')
     if ($SandboxTrust) {
         Copy-Item -LiteralPath $sandboxFile -Destination (Join-Path $incoming 'package.sandbox.json')
-        & $Binary import --incoming-dir $incoming --extensions-dir $store --sandbox-trust $SandboxTrust
+        if ($PublisherPolicy) {
+            Copy-Item -LiteralPath $publisherFile -Destination (Join-Path $incoming 'package.publisher.json')
+            & $Binary import --incoming-dir $incoming --extensions-dir $store --sandbox-trust $SandboxTrust --publisher-mode $PublisherMode --publisher-policy $PublisherPolicy
+        } else {
+            & $Binary import --incoming-dir $incoming --extensions-dir $store --sandbox-trust $SandboxTrust --publisher-mode any
+        }
     } else {
         & $Binary add $incoming --require-signature --extensions-dir $store
     }
@@ -87,7 +99,7 @@ function Invoke-CodeTest([string]$name, [string[]]$arguments, [bool]$expectSucce
     if (-not $expectSuccess -and -not (($output -join "`n") -match 'SignatureVerificationFailed|Signature verification failed|PackageIntegrityCheckFailed|SignatureIntegrityCheckFailed')) { throw 'Tampered package failed before signature verification; the negative test is inconclusive' }
 }
 
-if ($PreviousVSIX) { Import-Package $PreviousVSIX $PreviousSignature $PreviousSandboxReport } else { Import-Package $VSIX $Signature $SandboxReport }
+if ($PreviousVSIX) { Import-Package $PreviousVSIX $PreviousSignature $PreviousSandboxReport $PreviousPublisherReport } else { Import-Package $VSIX $Signature $SandboxReport $PublisherReport }
 $serverArguments = @('server','--extensions-dir',('"' + $store + '"'),'--address',"127.0.0.1:$port",'--list-cache-duration','0s','--verbose')
 if ($LegacyEmptySignatures) { $serverArguments += '--sign' }
 $server = Start-Process -FilePath $Binary -ArgumentList $serverArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $testRoot 'server.stdout') -RedirectStandardError (Join-Path $testRoot 'server.stderr')
@@ -103,7 +115,7 @@ try {
     $extensionID = "$($extension.publisher.publisherName).$($extension.extensionName)"
     Invoke-CodeTest 'signed-install' @('--install-extension', $extensionID)
     if ($PreviousVSIX) {
-        Import-Package $VSIX $Signature $SandboxReport
+        Import-Package $VSIX $Signature $SandboxReport $PublisherReport
         Invoke-CodeTest 'signed-install' @('--update-extensions')
     }
     $query = Invoke-RestMethod -Uri "$baseURL/api/extensionquery" -Method Post -ContentType 'application/json' -Body $payload

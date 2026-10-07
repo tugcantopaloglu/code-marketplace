@@ -1,6 +1,7 @@
 # Implementation order
 
 - [x] Require authenticated sandbox approval bound to the imported VSIX bytes.
+- [x] Add configurable verified publisher admission, exact name/GUID allowlists, and signed offline publisher provenance from a connected collector.
 - [x] Add incremental offline imports, durable receipts, conflict protection, and machine-readable results.
 - [x] Harden the container and Helm deployment, including an optional offline import CronJob.
 - [x] Verify local offline import, installation, updates, process restart persistence, and rejected packages.

@@ -20,12 +20,12 @@ Copy-Item -LiteralPath $VSIX -Destination (Join-Path $incoming 'incomplete.vsix.
 if ($LASTEXITCODE -ne 0) { throw 'Could not create test reports' }
 Copy-Item -LiteralPath (Join-Path $reports 'approved.sandbox.json') -Destination $incoming
 $trust = Join-Path $reports 'trust.json'
-$first = & $Binary import --incoming-dir $incoming --extensions-dir $published --sandbox-trust $trust
+$first = & $Binary import --incoming-dir $incoming --extensions-dir $published --sandbox-trust $trust --publisher-mode any
 if ($LASTEXITCODE -ne 0) { throw 'Initial import failed' }
 $first | Set-Content -LiteralPath (Join-Path $testRoot 'first.json')
 $results = ($first | ConvertFrom-Json).results
 if (@($results | Where-Object status -eq 'imported').Count -ne 1 -or @($results | Where-Object status -eq 'waiting').Count -ne 1) { throw 'Unexpected first import results' }
-$second = & $Binary import --incoming-dir $incoming --extensions-dir $published --sandbox-trust $trust
+$second = & $Binary import --incoming-dir $incoming --extensions-dir $published --sandbox-trust $trust --publisher-mode any
 if ($LASTEXITCODE -ne 0 -or @((($second | ConvertFrom-Json).results) | Where-Object status -eq 'unchanged').Count -ne 1) { throw 'Repeated import was not idempotent' }
 $second | Set-Content -LiteralPath (Join-Path $testRoot 'second.json')
 $artifact = Get-ChildItem -LiteralPath $published -Recurse -File -Filter '*.vsix' | Select-Object -First 1

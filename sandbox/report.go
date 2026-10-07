@@ -78,21 +78,9 @@ func (p *Policy) Verify(data, vsix []byte, now time.Time) (*Approval, error) {
 	if p == nil || p.MaxAge <= 0 {
 		return nil, fmt.Errorf("sandbox policy is required")
 	}
-	var envelope Envelope
-	if err := Decode(data, &envelope); err != nil {
-		return nil, fmt.Errorf("sandbox report: %w", err)
-	}
-	key := p.Keys[envelope.KeyID]
-	if len(key) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("sandbox report uses an untrusted key")
-	}
-	payload, err := base64.StdEncoding.Strict().DecodeString(envelope.Payload)
+	payload, keyID, err := VerifyPayload(data, p.Keys, signingContext)
 	if err != nil {
-		return nil, fmt.Errorf("invalid sandbox report payload")
-	}
-	signature, err := base64.StdEncoding.Strict().DecodeString(envelope.Signature)
-	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(key, append([]byte(signingContext), payload...), signature) {
-		return nil, fmt.Errorf("sandbox report signature verification failed")
+		return nil, fmt.Errorf("sandbox report: %w", err)
 	}
 	var claims Claims
 	if err := Decode(payload, &claims); err != nil {
@@ -112,21 +100,52 @@ func (p *Policy) Verify(data, vsix []byte, now time.Time) (*Approval, error) {
 		return nil, fmt.Errorf("sandbox report SHA-256 does not match the VSIX")
 	}
 	reportDigest := sha256.Sum256(data)
-	return &Approval{Claims: claims, KeyID: envelope.KeyID, ReportSHA256: hex.EncodeToString(reportDigest[:])}, nil
+	return &Approval{Claims: claims, KeyID: keyID, ReportSHA256: hex.EncodeToString(reportDigest[:])}, nil
 }
 
 func Sign(claims Claims, keyID string, key ed25519.PrivateKey) ([]byte, error) {
-	if len(key) != ed25519.PrivateKeySize || keyID == "" {
-		return nil, fmt.Errorf("sandbox signing key and key ID are required")
-	}
 	payload, err := json.Marshal(claims)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(Envelope{
+	return SignPayload(payload, keyID, key, signingContext)
+}
+
+func VerifyPayload(data []byte, keys map[string]ed25519.PublicKey, context string) ([]byte, string, error) {
+	var envelope Envelope
+	if err := Decode(data, &envelope); err != nil {
+		return nil, "", err
+	}
+	key := keys[envelope.KeyID]
+	if len(key) != ed25519.PublicKeySize {
+		return nil, "", fmt.Errorf("report uses an untrusted key")
+	}
+	payload, err := base64.StdEncoding.Strict().DecodeString(envelope.Payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid report payload")
+	}
+	signature, err := base64.StdEncoding.Strict().DecodeString(envelope.Signature)
+	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(key, append([]byte(context), payload...), signature) {
+		return nil, "", fmt.Errorf("report signature verification failed")
+	}
+	return payload, envelope.KeyID, nil
+}
+
+func SignPayload(payload []byte, keyID string, key ed25519.PrivateKey, context string) ([]byte, error) {
+	if len(key) != ed25519.PrivateKeySize || keyID == "" || len(payload) > MaxReportSize {
+		return nil, fmt.Errorf("signing key, key ID, and bounded payload are required")
+	}
+	data, err := json.Marshal(Envelope{
 		KeyID: keyID, Payload: base64.StdEncoding.EncodeToString(payload),
-		Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(key, append([]byte(signingContext), payload...))),
+		Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(key, append([]byte(context), payload...))),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxReportSize {
+		return nil, fmt.Errorf("signed report exceeds size limit")
+	}
+	return data, nil
 }
 
 func ReadFile(path string) ([]byte, error) {

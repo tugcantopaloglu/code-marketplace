@@ -152,6 +152,11 @@ importer:
   sandboxTrust:
     configMap: ""
     key: sandbox-trust.json
+  publisherPolicy:
+    mode: verified
+    maxAge: 168h
+    configMap: ""
+    key: publisher-policy.json
   resources:
     requests:
       cpu: 250m

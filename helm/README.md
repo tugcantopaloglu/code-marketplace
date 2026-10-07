@@ -43,6 +43,14 @@ Set `importer.sandboxTrust.configMap` to that name. The sandbox signing private
 key, THOR binary, THOR license, and scanner rule updates stay on the dedicated
 licensed scanner server. See [SANDBOX.md](../SANDBOX.md).
 
+Publisher admission defaults to `importer.publisherPolicy.mode: verified`.
+Create `marketplace-publisher-policy` from the connected collector's public
+`publisher-policy.json`, then configure its exact publisher-name or GUID
+allowlist. Set `mode: allowlist` to accept allowlisted publishers without requiring
+the badge, or explicitly set `mode: any` to disable publisher restrictions.
+Sandbox and VSIX signature checks remain required. The collector's private key
+stays on the connected host. See [PUBLISHERS.md](../PUBLISHERS.md).
+
 The importer produces JSON logs with per-file decisions. Missing sidecars wait;
 policy rejections do not stop other packages. Infrastructure failures and
 conflicting existing versions make the Job fail. `concurrencyPolicy: Forbid`

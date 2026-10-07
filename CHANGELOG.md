@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add configurable verified-publisher and exact name/GUID allowlist admission,
+  using signed Marketplace provenance bound to original package and signature bytes.
+- Add a connected `collect` command and dedicated collector key generation;
+  keep publisher policy verification offline and default it to verified mode.
+
 - Require authenticated clean sandbox approval for the offline `import` command;
   validate Ed25519 report signatures, package hashes, scan completion, and expiry.
 - Record private import receipts and reports, return per-file JSON results,

@@ -120,6 +120,14 @@ updating. Synthetic test reports can be created with:
 node scripts/create-sandbox-test-report.cjs --test-only ./test-reports ./new.vsix ./old.vsix
 ```
 
+Add `-PublisherPolicy`, `-PublisherReport`, and `-PreviousPublisherReport` to
+exercise verified publisher admission with genuine collector output. Tests that
+only exercise sandbox approval explicitly select publisher mode `any`.
+Publisher tests cover unverified and disallowed publishers, forged reports,
+package and signature hash mismatches, observation expiry, and signed payloads
+from the wrong signing context. Collector tests verify identity binding and
+platform asset selection.
+
 Never configure a production importer to trust these synthetic keys. Use
 `helm lint ./helm` and `helm lint ./helm -f ./helm/values-offline.yaml` to check
 the chart. Set the registry, image tag, PVC names, ingress namespace, and trusted

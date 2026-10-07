@@ -4,6 +4,8 @@ The sandbox scans completed VSIX files on the incoming share and writes a report
 next to each file. `package.vsix`, `package.sigzip`, and `package.sandbox.json`
 form one import unit. Finish all three files using temporary names before
 publishing the final VSIX name. The marketplace never runs the uploaded extension.
+Publisher-restricted imports also require `package.publisher.json` as described
+in [PUBLISHERS.md](PUBLISHERS.md).
 
 The intended scanner is Nextron THOR. Its adapter must translate the native
 result into this contract and sign it. This repository validates reports; it
@@ -87,7 +89,7 @@ scanner; successful process exit alone is not a clean-file verdict.
 ## Scheduled import
 
 ```console
-code-marketplace import --incoming-dir ./incoming --extensions-dir ./published --sandbox-trust ./sandbox-trust.json
+code-marketplace import --incoming-dir ./incoming --extensions-dir ./published --sandbox-trust ./sandbox-trust.json --publisher-policy ./publisher-policy.json
 ```
 
 This command always requires both authenticated sandbox approval and a matching
