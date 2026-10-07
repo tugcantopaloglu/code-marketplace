@@ -18,9 +18,10 @@ func ValidateComponent(value string) error {
 		return fmt.Errorf("invalid identity component %q: path escapes from parent or invalid name", value)
 	}
 	for _, char := range value {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("._+-", char)) {
-			return fmt.Errorf("invalid identity component %q: path escapes from parent or invalid name", value)
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || strings.ContainsRune("._+-", char) {
+			continue
 		}
+		return fmt.Errorf("invalid identity component %q: path escapes from parent or invalid name", value)
 	}
 	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
 	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {

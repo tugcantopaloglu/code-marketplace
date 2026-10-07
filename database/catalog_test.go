@@ -39,10 +39,10 @@ func TestLocalCatalogDatesAndPlatforms(t *testing.T) {
 	require.Len(t, results[0].Versions, 2)
 	for _, version := range results[0].Versions {
 		require.WithinDuration(t, time.Now().UTC(), version.LastUpdated, time.Minute)
-		require.Contains(t, version.AssetURI, version.Version.String())
+		require.Contains(t, version.AssetURI, version.String())
 		for _, file := range version.Files {
 			if file.Type == storage.VSIXSignatureType {
-				require.Contains(t, file.Source, version.Version.String())
+				require.Contains(t, file.Source, version.String())
 			}
 		}
 	}

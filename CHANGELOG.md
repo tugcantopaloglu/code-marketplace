@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pin the Helm schema validator to a Go 1.25-compatible release and resolve
+  staticcheck findings in the Go lint workflow.
+
 - Run the container as a non-root user on port 8080 and harden Helm security defaults.
 - Use native shared file locks that release automatically when a process exits.
 
