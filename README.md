@@ -15,8 +15,9 @@ management, military, and intelligence where they deploy Coder in an air-gapped
 network and accessing an internet-hosted marketplace is not allowed.
 
 This marketplace reads extensions from file storage and provides an API for
-editors to consume. It does not have a frontend or any mechanisms for extension
-authors to add or update extensions in the marketplace.
+editors to consume. An optional separate [management service](MANAGEMENT.md)
+provides AD-authenticated catalog access, incoming uploads, and version revocation.
+Its configuration is YAML. Uploaded packages still pass the offline admission gates.
 
 ## Deployment
 
@@ -27,16 +28,17 @@ address in some way.
 ### Kubernetes
 
 If deploying with Kubernetes see the [Helm directory](./helm) otherwise read on.
+For transfer into an offline network and pushing to internal Harbor, see
+[OFFLINE.md](OFFLINE.md). The offline bundle contains the complete image,
+packaged chart, corresponding source, and checksums.
 
 ### Getting the binary
 
-The binary can be downloaded from GitHub releases. For example here is a way to
-download the latest release using `wget`. Replace `$os` and `$arch` with your
-operating system and architecture.
+Build this fork from a committed checkout using the Go version in `go.mod`, or
+use the repository's `offline bundle` workflow for deployment artifacts.
 
 ```console
-wget https://github.com/coder/code-marketplace/releases/latest/download/code-marketplace-$os-$arch -O ./code-marketplace
-chmod +x ./code-marketplace
+go build -o ./bin/code-marketplace ./cmd/marketplace
 ```
 
 ### Running the server

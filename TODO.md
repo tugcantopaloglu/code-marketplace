@@ -7,7 +7,10 @@
 - [x] Verify local offline import, installation, updates, process restart persistence, and rejected packages.
 - [ ] Run the container and live Kubernetes restart test after the local Docker engine is repaired.
 - [x] Fix local catalog timestamps and report missing dependencies; validate platform assets.
-- [ ] Add the management API and UI last, with LDAPS or LDAP with StartTLS, AD group authorization, secure sessions, and audit records.
+- [x] Add the management API and UI with YAML, LDAPS or mandatory LDAP StartTLS, nested AD group roles, secure sessions, incoming uploads, durable revocations, and audit records.
+- [x] Add complete offline image/chart/source bundles and an internal Harbor import/push helper.
+- [ ] Validate organization AD group membership, CA trust, ingress upload limits, and shared PVC behavior in the actual internal environment.
+- [ ] Transfer the generated offline bundle and push it to the organization's Harbor using its host, project, credentials, and TLS CA.
 
 The Nextron THOR adapter remains pending until its version and a native JSON scan report are provided. Its licensed scanner runs on a fixed host outside the marketplace deployment.
 

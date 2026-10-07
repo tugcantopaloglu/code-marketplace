@@ -99,7 +99,7 @@ spec:
             {{- if ne .Values.importer.publisherPolicy.mode "any" }}
             - name: publisher-policy
               configMap:
-                name: {{ required "importer.publisherPolicy.configMap is required for verified or allowlist mode" .Values.importer.publisherPolicy.configMap }}
+                name: {{ include "code-marketplace.publisherPolicyName" . }}
                 items:
                   - key: {{ .Values.importer.publisherPolicy.key | quote }}
                     path: policy.json

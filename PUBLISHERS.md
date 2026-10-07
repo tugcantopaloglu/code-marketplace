@@ -111,6 +111,11 @@ the importer. The offline example uses `marketplace-publisher-policy`.
 `any` mode does not require this extra ConfigMap. Policy is mounted read-only
 and importer egress remains blocked.
 
+To manage trusted public keys and allowed publishers directly in values YAML,
+leave `configMap` empty and configure `trustedKeys` plus `allowedPublishers`.
+Helm creates the policy ConfigMap from those fields. Management uses the same
+policy, mode, and age. See [MANAGEMENT.md](MANAGEMENT.md).
+
 ```console
 kubectl create configmap marketplace-publisher-policy --from-file=publisher-policy.json=./publisher-policy.json
 ```

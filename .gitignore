@@ -4,3 +4,4 @@ coverage
 extensions
 .idea
 collector-private.pem
+offline-output

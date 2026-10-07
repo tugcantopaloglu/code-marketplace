@@ -157,6 +157,8 @@ importer:
     maxAge: 168h
     configMap: ""
     key: publisher-policy.json
+    trustedKeys: {}
+    allowedPublishers: []
   resources:
     requests:
       cpu: 250m
@@ -172,3 +174,46 @@ networkPolicy:
 
 tests:
   enabled: false
+
+admin:
+  enabled: false
+  port: 8081
+  bindSecret: ""
+  bindSecretKey: password
+  caConfigMap: ""
+  caKey: ldap-ca.pem
+  audit:
+    existingClaim: ""
+    subPath: ""
+  config:
+    publicURL: ""
+    ldap:
+      url: ""
+      bindDN: ""
+      userBaseDN: ""
+      usernameAttribute: sAMAccountName
+      readerGroups: []
+      adminGroups: []
+      timeout: 10s
+    session:
+      lifetime: 1h
+      idleTimeout: 15m
+      recheckInterval: 1m
+      maxSessions: 1000
+  ingress:
+    enabled: true
+    className: ""
+    annotations: {}
+    host: ""
+    tlsSecret: ""
+  networkPolicy:
+    ingressFrom: []
+    ldapCIDRs: []
+    ldapPort: 636
+    dnsNamespace: kube-system
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 1536Mi

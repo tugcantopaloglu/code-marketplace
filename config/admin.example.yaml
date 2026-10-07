@@ -1,0 +1,26 @@
+address: 127.0.0.1:8081
+publicURL: https://marketplace-admin.internal
+extensionsDir: /extensions
+incomingDir: /incoming
+auditFile: /audit/admin.jsonl
+ldap:
+  url: ldaps://dc01.internal:636
+  caFile: /ad-ca/ldap-ca.pem
+  bindDN: CN=svc-marketplace,OU=Service Accounts,DC=internal
+  bindPasswordFile: /ad-secret/password
+  userBaseDN: OU=Users,DC=internal
+  usernameAttribute: sAMAccountName
+  readerGroups:
+    - CN=Marketplace-Readers,OU=Groups,DC=internal
+  adminGroups:
+    - CN=Marketplace-Admins,OU=Groups,DC=internal
+  timeout: 10s
+session:
+  lifetime: 1h
+  idleTimeout: 15m
+  recheckInterval: 1m
+  maxSessions: 1000
+publisher:
+  mode: verified
+  policyFile: /publisher-policy/policy.json
+  maxAge: 168h

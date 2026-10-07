@@ -1,0 +1,26 @@
+admin:
+  enabled: true
+  bindSecret: marketplace-ad-bind
+  caConfigMap: marketplace-ad-ca
+  audit:
+    existingClaim: marketplace-audit
+  config:
+    publicURL: https://marketplace-admin.internal
+    ldap:
+      url: ldaps://dc01.internal:636
+      bindDN: CN=svc-marketplace,OU=Service Accounts,DC=internal
+      userBaseDN: OU=Users,DC=internal
+      readerGroups:
+        - CN=Marketplace-Readers,OU=Groups,DC=internal
+      adminGroups:
+        - CN=Marketplace-Admins,OU=Groups,DC=internal
+  ingress:
+    host: marketplace-admin.internal
+    tlsSecret: marketplace-admin-tls
+  networkPolicy:
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-system
+    ldapCIDRs:
+      - 10.20.30.40/32

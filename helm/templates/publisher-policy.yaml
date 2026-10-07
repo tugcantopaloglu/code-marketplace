@@ -1,0 +1,20 @@
+{{- define "code-marketplace.publisherPolicyName" -}}
+{{- if .Values.importer.publisherPolicy.configMap -}}
+{{- .Values.importer.publisherPolicy.configMap -}}
+{{- else if .Values.importer.publisherPolicy.trustedKeys -}}
+{{- printf "%s-publisher-policy" (include "code-marketplace.fullname" .) -}}
+{{- else -}}
+{{- fail "Configure importer.publisherPolicy.configMap or trustedKeys for verified/allowlist mode" -}}
+{{- end -}}
+{{- end -}}
+{{- if and (or .Values.importer.enabled .Values.admin.enabled) (ne .Values.importer.publisherPolicy.mode "any") .Values.importer.publisherPolicy.trustedKeys }}
+{{- if .Values.importer.publisherPolicy.configMap }}
+{{- fail "Choose an external publisher policy ConfigMap or YAML trustedKeys, not both" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "code-marketplace.publisherPolicyName" . }}
+data:
+  {{ .Values.importer.publisherPolicy.key }}: {{ dict "keys" .Values.importer.publisherPolicy.trustedKeys "allowedPublishers" .Values.importer.publisherPolicy.allowedPublishers | toJson | quote }}
+{{- end }}

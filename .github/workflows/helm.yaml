@@ -30,10 +30,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - run: helm lint --strict ./helm
       - run: helm lint --strict ./helm -f ./helm/values-offline.yaml
+      - run: helm lint --strict ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: |
           helm template marketplace ./helm > /tmp/marketplace-default.yaml
           helm template marketplace ./helm -f ./helm/values-offline.yaml --set tests.enabled=true > /tmp/marketplace-offline.yaml
-          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0 -strict -summary -kubernetes-version 1.31.0 /tmp/marketplace-default.yaml /tmp/marketplace-offline.yaml
+          helm template marketplace ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml > /tmp/marketplace-admin.yaml
+          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0 -strict -summary -kubernetes-version 1.31.0 /tmp/marketplace-default.yaml /tmp/marketplace-offline.yaml /tmp/marketplace-admin.yaml

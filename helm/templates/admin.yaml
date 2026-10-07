@@ -1,0 +1,251 @@
+{{- if .Values.admin.enabled }}
+{{- if .Values.persistence.artifactory.enabled }}
+{{- fail "The management service requires local PVC storage" }}
+{{- end }}
+{{- if not .Values.importer.enabled }}
+{{- fail "Enable importer when enabling management uploads" }}
+{{- end }}
+{{- if not .Values.admin.networkPolicy.ldapCIDRs }}
+{{- fail "admin.networkPolicy.ldapCIDRs must restrict AD access to internal addresses" }}
+{{- end }}
+{{- if not .Values.admin.networkPolicy.ingressFrom }}
+{{- fail "admin.networkPolicy.ingressFrom must select the trusted ingress controller" }}
+{{- end }}
+{{- if and .Values.admin.ingress.enabled (ne .Values.admin.config.publicURL (printf "https://%s" .Values.admin.ingress.host)) }}
+{{- fail "admin.config.publicURL must match the HTTPS admin ingress host" }}
+{{- end }}
+{{- $config := deepCopy .Values.admin.config }}
+{{- $_ := set $config "address" (printf "0.0.0.0:%v" .Values.admin.port) }}
+{{- $_ := set $config "extensionsDir" "/extensions" }}
+{{- $_ := set $config "incomingDir" "/incoming" }}
+{{- $_ := set $config "auditFile" "/audit/admin.jsonl" }}
+{{- $_ := set $config.ldap "bindPasswordFile" "/ad-secret/password" }}
+{{- $_ := set $config.ldap "caFile" "/ad-ca/ldap-ca.pem" }}
+{{- $_ := set $config "publisher" (dict "mode" .Values.importer.publisherPolicy.mode "maxAge" .Values.importer.publisherPolicy.maxAge "policyFile" "/publisher-policy/policy.json") }}
+{{- $_ := required "admin.config.publicURL is required" $config.publicURL }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "code-marketplace.fullname" . }}-admin
+data:
+  admin.yaml: |
+    {{- toYaml $config | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "code-marketplace.fullname" . }}-admin
+  labels:
+    {{- include "code-marketplace.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "code-marketplace.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: admin
+  template:
+    metadata:
+      labels:
+        {{- include "code-marketplace.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: admin
+      annotations:
+        checksum/config: {{ toYaml $config | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: {{ include "code-marketplace.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: admin
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - admin
+            - --config
+            - /admin-config/admin.yaml
+          ports:
+            - name: admin
+              containerPort: {{ .Values.admin.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            failureThreshold: 30
+            periodSeconds: 2
+          resources:
+            {{- toYaml .Values.admin.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /admin-config
+              readOnly: true
+            - name: password
+              mountPath: /ad-secret
+              readOnly: true
+            - name: ca
+              mountPath: /ad-ca
+              readOnly: true
+            - name: published
+              mountPath: /extensions
+              {{- with .Values.persistence.subPath }}
+              subPath: {{ . | quote }}
+              {{- end }}
+            - name: incoming
+              mountPath: /incoming
+              {{- with .Values.importer.incoming.subPath }}
+              subPath: {{ . | quote }}
+              {{- end }}
+            - name: audit
+              mountPath: /audit
+              {{- with .Values.admin.audit.subPath }}
+              subPath: {{ . | quote }}
+              {{- end }}
+            {{- if ne .Values.importer.publisherPolicy.mode "any" }}
+            - name: publisher-policy
+              mountPath: /publisher-policy
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "code-marketplace.fullname" . }}-admin
+        - name: password
+          secret:
+            secretName: {{ required "admin.bindSecret is required" .Values.admin.bindSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.admin.bindSecretKey | quote }}
+                path: password
+        - name: ca
+          configMap:
+            name: {{ required "admin.caConfigMap is required" .Values.admin.caConfigMap }}
+            items:
+              - key: {{ .Values.admin.caKey | quote }}
+                path: ldap-ca.pem
+        - name: published
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "code-marketplace.fullname" .) }}
+        - name: incoming
+          persistentVolumeClaim:
+            claimName: {{ .Values.importer.incoming.existingClaim }}
+        - name: audit
+          persistentVolumeClaim:
+            claimName: {{ required "admin.audit.existingClaim is required" .Values.admin.audit.existingClaim }}
+        {{- if ne .Values.importer.publisherPolicy.mode "any" }}
+        - name: publisher-policy
+          configMap:
+            name: {{ include "code-marketplace.publisherPolicyName" . }}
+            items:
+              - key: {{ .Values.importer.publisherPolicy.key | quote }}
+                path: policy.json
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "code-marketplace.fullname" . }}-admin
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "code-marketplace.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+  ports:
+    - name: admin
+      port: {{ .Values.admin.port }}
+      targetPort: admin
+      protocol: TCP
+{{- if .Values.admin.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "code-marketplace.fullname" . }}-admin
+  {{- with .Values.admin.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.admin.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  tls:
+    - secretName: {{ required "admin.ingress.tlsSecret is required" .Values.admin.ingress.tlsSecret }}
+      hosts:
+        - {{ required "admin.ingress.host is required" .Values.admin.ingress.host | quote }}
+  rules:
+    - host: {{ .Values.admin.ingress.host | quote }}
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "code-marketplace.fullname" . }}-admin
+                port:
+                  name: admin
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "code-marketplace.fullname" . }}-admin
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "code-marketplace.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: admin
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.admin.port }}
+      from:
+        {{- toYaml .Values.admin.networkPolicy.ingressFrom | nindent 8 }}
+  egress:
+    - to:
+        {{- range .Values.admin.networkPolicy.ldapCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.admin.networkPolicy.ldapPort }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.admin.networkPolicy.dnsNamespace | quote }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

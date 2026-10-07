@@ -153,6 +153,13 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 		}
 	}
 	summary.CompletedAt = time.Now().UTC()
+	data, err := json.Marshal(summary)
+	if err != nil {
+		return summary, err
+	}
+	if err := storage.WritePrivateFile(output, ".last-import.json", data); err != nil {
+		return summary, fmt.Errorf("persist import results: %w", err)
+	}
 	if failed {
 		return summary, fmt.Errorf("one or more imports failed or conflicted; see JSON results")
 	}
@@ -175,6 +182,15 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	identity := manifest.Metadata.Identity
 	version := storage.Version{Version: identity.Version, TargetPlatform: identity.TargetPlatform}
 	result.Extension = storage.ExtensionIDWithoutVersion(identity.Publisher, identity.ID) + "@" + version.String()
+	revoked, err := storage.IsRevoked(output, identity.Publisher, identity.ID, version)
+	if err != nil {
+		result.Status, result.Reason = "failed", err.Error()
+		return result
+	}
+	if revoked {
+		result.Reason = "this version was revoked by an administrator"
+		return result
+	}
 	for _, property := range manifest.Metadata.Properties.Property {
 		if property.ID == storage.DependencyPropertyType && property.Value != "" {
 			for _, dependency := range strings.Split(property.Value, ",") {

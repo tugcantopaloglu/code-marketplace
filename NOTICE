@@ -1,0 +1,11 @@
+Code Marketplace
+
+Based on github.com/coder/code-marketplace by Coder Technologies, Inc.
+Original and modified application source is distributed under AGPL-3.0.
+The LICENSE file retains the original license terms.
+
+This fork adds offline signature handling, authenticated scan admission,
+publisher provenance, Kubernetes hardening, and Active Directory management.
+
+The container includes application and dependency license texts in
+/usr/share/licenses/code-marketplace.

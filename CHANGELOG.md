@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a separate YAML-configured management API/UI with LDAPS or mandatory
+  LDAP StartTLS, nested AD group roles, bounded sessions, CSRF/Origin protection,
+  incoming bundle uploads, durable version revocations, and persistent audit records.
+- Persist the latest scheduled import results for management visibility.
+- Add hardened admin Helm deployment, Secrets/CA mounts, internal AD NetworkPolicy,
+  and YAML-managed publisher keys and allowlists.
+- Add architecture-specific offline image/chart/source bundles and a verified
+  Docker load/tag/push helper for internal Harbor.
+
 - Add configurable verified-publisher and exact name/GUID allowlist admission,
   using signed Marketplace provenance bound to original package and signature bytes.
 - Add a connected `collect` command and dedicated collector key generation;

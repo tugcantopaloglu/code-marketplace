@@ -1,7 +1,13 @@
 # Code Extension Marketplace Helm Chart
 
+Optional AD management is configured using `values-admin.yaml` together with
+offline values. See [MANAGEMENT.md](../MANAGEMENT.md) for YAML settings, secure
+LDAP, Secrets, ingress restrictions, upload limits, and PVC requirements. See
+[OFFLINE.md](../OFFLINE.md) for complete offline bundles and internal Harbor pushes.
+The admin component is disabled by default and uses the same application image.
+
 Deploy the fork image from your internal registry. The chart defaults to
-`v2.5.0`; build and mirror that image, or set `image.tag` to the exact release
+`v2.6.0`; build and mirror that image, or set `image.tag` to the exact release
 or commit image you built. The chart does not create or download that image.
 
 ```console
