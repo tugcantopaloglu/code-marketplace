@@ -1,0 +1,95 @@
+{{- if .Values.importer.enabled }}
+{{- if .Values.persistence.artifactory.enabled }}
+{{- fail "The offline importer requires local PVC storage" }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "code-marketplace.fullname" . }}-importer
+  labels:
+    {{- include "code-marketplace.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.importer.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.importer.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "code-marketplace.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: importer
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          serviceAccountName: {{ include "code-marketplace.serviceAccountName" . }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: importer
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              args:
+                - import
+                - --incoming-dir
+                - /incoming
+                - --extensions-dir
+                - /extensions
+                - --sandbox-trust
+                - /sandbox-trust/trust.json
+                - --sandbox-max-age
+                - {{ .Values.importer.sandboxMaxAge | quote }}
+              resources:
+                {{- toYaml .Values.importer.resources | nindent 16 }}
+              volumeMounts:
+                - name: incoming
+                  mountPath: /incoming
+                  readOnly: true
+                  {{- with .Values.importer.incoming.subPath }}
+                  subPath: {{ . | quote }}
+                  {{- end }}
+                - name: published
+                  mountPath: /extensions
+                  {{- with .Values.persistence.subPath }}
+                  subPath: {{ . | quote }}
+                  {{- end }}
+                - name: sandbox-trust
+                  mountPath: /sandbox-trust
+                  readOnly: true
+          volumes:
+            - name: incoming
+              persistentVolumeClaim:
+                claimName: {{ required "importer.incoming.existingClaim is required" .Values.importer.incoming.existingClaim }}
+            - name: published
+              persistentVolumeClaim:
+                claimName: {{ .Values.persistence.existingClaim | default (include "code-marketplace.fullname" .) }}
+            - name: sandbox-trust
+              configMap:
+                name: {{ required "importer.sandboxTrust.configMap is required" .Values.importer.sandboxTrust.configMap }}
+                items:
+                  - key: {{ .Values.importer.sandboxTrust.key | quote }}
+                    path: trust.json
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

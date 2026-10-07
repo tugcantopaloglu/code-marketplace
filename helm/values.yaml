@@ -33,10 +33,22 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
+podSecurityContext:
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
   # fsGroup: 2000
 
-securityContext: {}
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
   # capabilities:
   #   drop:
   #   - ALL
@@ -48,6 +60,7 @@ service:
   # https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
   type: ClusterIP
   port: 80
+  targetPort: 8080
 
 # https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
@@ -66,7 +79,12 @@ ingress:
   #    hosts:
   #      - chart-example.local
 
-resources: {}
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
@@ -105,7 +123,12 @@ tolerations: []
 affinity: {}
 
 persistence:
-  storageClass: standard
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  subPath: ""
+  readOnly: true
   artifactory:
     # Use Artifactory for extensions instead of a persistent volume. Make sure
     # to create an `artifactory` secret with a `token` key.
@@ -114,3 +137,33 @@ persistence:
     repo: extensions
   # Size is ignored when using Artifactory.
   size: 100Gi
+
+server:
+  listCacheDuration: 30s
+
+importer:
+  enabled: false
+  schedule: "*/5 * * * *"
+  sandboxMaxAge: 24h
+  activeDeadlineSeconds: 600
+  incoming:
+    existingClaim: ""
+    subPath: ""
+  sandboxTrust:
+    configMap: ""
+    key: sandbox-trust.json
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      memory: 2Gi
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - podSelector: {}
+  egress: []
+
+tests:
+  enabled: false

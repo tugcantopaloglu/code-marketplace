@@ -1,15 +1,25 @@
+{{- if .Values.tests.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
   name: "{{ include "code-marketplace.fullname" . }}-test-connection"
   labels:
     {{- include "code-marketplace.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
   annotations:
     "helm.sh/hook": test
 spec:
+  automountServiceAccountToken: false
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   containers:
     - name: wget
-      image: busybox
-      command: ['wget']
-      args: ['{{ include "code-marketplace.fullname" . }}:{{ .Values.service.port }}']
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      command: ['/bin/busybox', 'wget']
+      args: ['--spider', 'http://{{ include "code-marketplace.fullname" . }}:{{ .Values.service.port }}/readyz']
   restartPolicy: Never
+{{- end }}

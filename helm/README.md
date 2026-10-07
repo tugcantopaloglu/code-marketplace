@@ -1,84 +1,94 @@
 # Code Extension Marketplace Helm Chart
 
-This directory contains the Helm chart used to deploy the marketplace onto a
-Kubernetes cluster.
-
-## Quickstart
+Deploy the fork image from your internal registry. The chart defaults to
+`v2.5.0`; build and mirror that image, or set `image.tag` to the exact release
+or commit image you built. The chart does not create or download that image.
 
 ```console
-$ git clone --depth 1 https://github.com/coder/code-marketplace
-$ helm upgrade --install code-marketplace ./code-marketplace/helm
+helm upgrade --install code-marketplace ./helm -f ./helm/values-offline.yaml
 ```
 
-This deploys the marketplace on the default Kubernetes cluster.
+Replace the example registry, PVC names, ingress hostname, TLS Secret, and
+controller namespace in `values-offline.yaml` before deployment. Storage class
+and ingress class remain configurable.
 
-## Ingress
+## Offline import
 
-You will need to configure `ingress` in [values.yaml](./values.yaml) to expose the
-marketplace on an external domain or change `service.type` to get yourself an
-external IP address.
+The marketplace mounts published storage read-only. The optional CronJob mounts
+incoming storage read-only and published storage writable. It executes the
+mandatory sandbox-gated `import` command with no network access. Keep your
+existing scheduler by leaving `importer.enabled: false` and invoking the same
+command there. Do not run two independent schedulers for the same storage.
 
-The marketplace must be put behind TLS otherwise code-server will reject
-connecting to the API. This could mean configuring `ingress` with TLS or putting
-the external IP behind a TLS-terminating reverse proxy.
+Create the incoming PVC separately and use `importer.incoming.existingClaim`.
+Use `persistence.existingClaim` for an existing published PVC. Otherwise the chart
+creates a published PVC using `persistence.accessModes`, `persistence.size`, and
+an optional `persistence.storageClass`. An omitted storage class uses the cluster
+default. `subPath` values allow distinct pre-created directories on shared storage.
+The incoming and published directories must not refer to the same directory.
 
-More information can be found at these links:
+The chart defaults to one replica and `ReadWriteOnce`. A CronJob and server on
+different nodes require storage that supports their concurrent mounts, or explicit
+node placement for a single-node mount. Select appropriate RWX storage and verify
+shared native file locks and atomic renames before enabling the importer across
+nodes. The chart does not assume that your storage class supports those operations.
 
-- https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-- https://kubernetes.io/docs/concepts/services-networking/ingress/
-
-When hosting the marketplace behind a reverse proxy set either the `Forwarded`
-header or both the `X-Forwarded-Host` and `X-Forwarded-Proto` headers (the
-default `ingress` already takes care of this). These headers are used to
-generate absolute URIs to extension assets in API responses. One way to test
-this is to make a query and check one of the URIs in the response:
+Deploy the scanner public keys as a trusted ConfigMap, separate from the share:
 
 ```console
-$ curl 'https://example.com/api/extensionquery' -H 'Accept: application/json;api-version=3.0-preview.1' --compressed -H 'Content-Type: application/json' --data-raw '{"filters":[{"criteria":[{"filterType":8,"value":"Microsoft.VisualStudio.Code"}],"pageSize":1}],"flags":439}' | jq .results[0].extensions[0].versions[0].assetUri
-"https://example.com/assets/vscodevim/vim/1.24.1"
+kubectl create configmap marketplace-sandbox-trust --from-file=sandbox-trust.json=./sandbox-trust.json
 ```
 
-The marketplace does not support being hosted behind a base path; it must be
-proxied at the root of your domain.
+Set `importer.sandboxTrust.configMap` to that name. The sandbox signing private
+key, THOR binary, THOR license, and scanner rule updates stay on the dedicated
+licensed scanner server. See [SANDBOX.md](../SANDBOX.md).
 
-## Adding/removing extensions
+The importer produces JSON logs with per-file decisions. Missing sidecars wait;
+policy rejections do not stop other packages. Infrastructure failures and
+conflicting existing versions make the Job fail. `concurrencyPolicy: Forbid`
+prevents overlap for this CronJob; a native shared lock also guards the storage.
 
-One way to get extensions added or removed is to exec into the pod and use the
-marketplace binary to add and remove them.
+## HTTPS and network access
+
+Expose the root of a hostname over HTTPS with a certificate trusted by VS Code
+clients. Set `ingress.className`, hosts, and TLS Secret for your controller. Its
+proxy must set `Forwarded`, or `X-Forwarded-Host` and `X-Forwarded-Proto`, so
+package and signature asset URLs also use HTTPS. Verify this in an
+`/api/extensionquery` response. A browser GET to `/api` alone is not a query.
+
+NetworkPolicy is enabled by default, allows incoming traffic from pods in the
+same namespace, and denies pod egress. For an ingress controller in a different
+namespace, configure `networkPolicy.ingressFrom` to select that namespace or its
+specific pods. The example uses `ingress-system`; change it to your actual
+controller namespace. Network isolation requires a CNI that enforces policies.
+For Artifactory mode, explicitly permit its internal endpoint and DNS in
+`networkPolicy.egress`; the offline importer only supports local PVC storage.
+
+## Runtime and operations
+
+Containers use UID/GID 10001, a read-only root filesystem, no privilege escalation,
+no Linux capabilities, RuntimeDefault seccomp, and no service-account token.
+The default filesystem group is 10001. Set volume permissions or `fsGroup` to
+match the storage provisioner. Service port 80 forwards to container port 8080.
+Configure resource values for the actual catalog and maximum package sizes.
+
+`/healthz` checks process health. `/readyz` additionally checks local storage
+readability. Startup, readiness, and liveness probes are included. The catalog
+cache defaults to 30 seconds; set `server.listCacheDuration` as needed. Import
+receipts and catalog dates are private stored metadata and are not download assets.
+
+Helm test pods are optional (`tests.enabled: true`) and use the same internal
+marketplace image. No additional public BusyBox image is needed. Their network
+policy allows only the marketplace and cluster DNS.
+
+Back up the published PVC and trusted public-key configuration before upgrades.
+Restore the stored VSIX, signature, receipt, sandbox report, and catalog metadata
+together. External PVCs are not deleted by Helm; a chart-created PVC is a release
+resource, so preserve or back it up before uninstalling. `helm uninstall` is not
+a backup or rollback procedure.
 
 ```console
-export POD_NAME=$(kubectl get pods -l "app.kubernetes.io/name=code-marketplace,app.kubernetes.io/instance=code-marketplace" -o jsonpath="{.items[0].metadata.name}")
-$ kubectl exec -it "$POD_NAME" -- /opt/code-marketplace add https://github.com/VSCodeVim/Vim/releases/download/v1.24.1/vim-1.24.1.vsix --extensions-dir /extensions
-```
-
-In the future it will be possible to use Artifactory for storing and retrieving
-extensions instead of a persistent volume.
-
-## Uninstall
-
-To uninstall/delete the marketplace deployment:
-
-```console
-$ helm delete code-marketplace
-```
-
-This removes all the Kubernetes components associated with the chart (including
-the persistent volume) and deletes the release.
-
-## Configuration
-
-Please refer to [values.yaml](./values.yaml) for available Helm values and their
-defaults.
-
-Specify values using `--set`:
-
-```console
-$ helm upgrade --install code-marketplace ./helm-chart \
-  --set persistence.size=10Gi
-```
-
-Or edit and use the YAML file:
-
-```console
-$ helm upgrade --install code-marketplace ./helm-chart -f values.yaml
+helm lint ./helm
+helm lint ./helm -f ./helm/values-offline.yaml
+helm template code-marketplace ./helm -f ./helm/values-offline.yaml
 ```

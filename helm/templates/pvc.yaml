@@ -1,13 +1,15 @@
-{{- if not .Values.persistence.artifactory.enabled }}
+{{- if and (not .Values.persistence.artifactory.enabled) (not .Values.persistence.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "code-marketplace.fullname" . }}
 spec:
   accessModes:
-    - ReadWriteOnce
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
   resources:
     requests:
       storage: {{ .Values.persistence.size | quote }}
-  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
 {{- end }}

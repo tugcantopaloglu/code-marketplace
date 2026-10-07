@@ -21,18 +21,20 @@ spec:
       {{- end }}
       labels:
         {{- include "code-marketplace.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: marketplace
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "code-marketplace.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- if or (.Values.volumes) (not .Values.persistence.artifactory.enabled) }}
       volumes:
       {{- if not .Values.persistence.artifactory.enabled }}
         - name: extensions
           persistentVolumeClaim:
-            claimName: {{ include "code-marketplace.fullname" . }}
+            claimName: {{ .Values.persistence.existingClaim | default (include "code-marketplace.fullname" .) }}
       {{- end }}
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
@@ -59,11 +61,14 @@ spec:
           {{- end }} 
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
           args:
+            - server
             - --address
-            - "0.0.0.0:{{ .Values.service.port }}"
+            - "0.0.0.0:{{ .Values.service.targetPort }}"
+            - --list-cache-duration
+            - {{ .Values.server.listCacheDuration | quote }}
             {{- if .Values.persistence.artifactory.enabled }}
             - --artifactory
             - {{ .Values.persistence.artifactory.uri }}
@@ -84,6 +89,10 @@ spec:
           {{- if not .Values.persistence.artifactory.enabled }}
             - name: extensions
               mountPath: /extensions
+              readOnly: {{ .Values.persistence.readOnly }}
+              {{- with .Values.persistence.subPath }}
+              subPath: {{ . | quote }}
+              {{- end }}
           {{- end }}
           {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -95,8 +104,14 @@ spec:
               port: http
           readinessProbe:
             httpGet:
+              path: /readyz
+              port: http
+          startupProbe:
+            httpGet:
               path: /healthz
               port: http
+            failureThreshold: 30
+            periodSeconds: 2
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

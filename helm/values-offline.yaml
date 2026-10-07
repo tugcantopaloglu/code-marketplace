@@ -1,0 +1,32 @@
+image:
+  repository: registry.internal/code-marketplace
+  tag: v2.5.0
+
+persistence:
+  existingClaim: marketplace-published
+  readOnly: true
+
+importer:
+  enabled: true
+  incoming:
+    existingClaim: extension-incoming
+  sandboxTrust:
+    configMap: marketplace-sandbox-trust
+
+ingress:
+  enabled: true
+  hosts:
+    - host: marketplace.internal
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: marketplace-tls
+      hosts:
+        - marketplace.internal
+
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-system
