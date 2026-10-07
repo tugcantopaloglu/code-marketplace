@@ -60,6 +60,18 @@ func (db *NoDB) GetExtensions(ctx context.Context, filter Filter, flags Flag, ba
 		vscodeExt := convertManifestToExtension(manifest)
 		// TODO: Could return early if ExtensionID or ExtensionName match.
 		if matched, distances := getMatches(vscodeExt, filter); matched {
+			for _, version := range versions {
+				dates, err := storage.GetCatalogDates(ctx, db.Storage, manifest.Metadata.Identity.Publisher, manifest.Metadata.Identity.ID, version)
+				if err != nil {
+					return err
+				}
+				if !dates.PublishedAt.IsZero() && (vscodeExt.PublishedDate.IsZero() || dates.PublishedAt.Before(vscodeExt.PublishedDate)) {
+					vscodeExt.PublishedDate, vscodeExt.ReleaseDate = dates.PublishedAt, dates.PublishedAt
+				}
+				if dates.UpdatedAt.After(vscodeExt.LastUpdated) {
+					vscodeExt.LastUpdated = dates.UpdatedAt
+				}
+			}
 			vscodeExt.versions = versions
 			vscodeExt.distances = distances
 			vscodeExts = append(vscodeExts, vscodeExt)
@@ -198,11 +210,16 @@ func sortExtensions(extensions []*noDBExtension, filter Filter) {
 		b := extensions[j]
 	outer:
 		switch filter.SortBy {
-		// These are not supported because we are not storing this information.
 		case LastUpdatedDate:
-			fallthrough
+			less = a.LastUpdated.Before(b.LastUpdated)
+			if a.LastUpdated.Equal(b.LastUpdated) {
+				less = a.Name < b.Name
+			}
 		case PublishedDate:
-			fallthrough
+			less = a.PublishedDate.Before(b.PublishedDate)
+			if a.PublishedDate.Equal(b.PublishedDate) {
+				less = a.Name < b.Name
+			}
 		case AverageRating:
 			fallthrough
 		case WeightedRating:
@@ -346,8 +363,12 @@ func (db *NoDB) getVersions(ctx context.Context, ext *noDBExtension, flags Flag,
 
 		version := ExtVersion{
 			Version: storageVer,
-			// LastUpdated:    time.Now(), // TODO: Use modified time?
 		}
+		dates, err := storage.GetCatalogDates(ctx, db.Storage, ext.Publisher.PublisherName, ext.Name, storageVer)
+		if err != nil {
+			return nil, err
+		}
+		version.LastUpdated = dates.UpdatedAt
 
 		if flags&IncludeFiles != 0 {
 			fileBase := (&url.URL{
@@ -428,10 +449,7 @@ func convertManifestToExtension(manifest *storage.VSIXManifest) *noDBExtension {
 				// There is not actually a separate display name field for publishers.
 				DisplayName: manifest.Metadata.Identity.Publisher,
 			},
-			Tags: strings.Split(manifest.Metadata.Tags, ","),
-			// ReleaseDate:   time.Now(), // TODO: Use creation time?
-			// PublishedDate: time.Now(), // TODO: Use creation time?
-			// LastUpdated:   time.Now(), // TODO: Use modified time?
+			Tags:       strings.Split(manifest.Metadata.Tags, ","),
 			Categories: strings.Split(manifest.Metadata.Categories, ","),
 			Flags:      manifest.Metadata.GalleryFlags,
 		},

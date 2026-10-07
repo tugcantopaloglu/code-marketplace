@@ -181,6 +181,17 @@ func (s *Local) AddExtension(ctx context.Context, manifest *VSIXManifest, vsix [
 		}
 	}
 
+	now := time.Now().UTC()
+	dates := CatalogDates{PublishedAt: now, UpdatedAt: now}
+	previous, err := s.CatalogDates(ctx, identity.Publisher, identity.ID, Version{Version: identity.Version, TargetPlatform: identity.TargetPlatform})
+	if err == nil {
+		dates.PublishedAt = previous.PublishedAt
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	if err := writeCatalog(root, dates); err != nil {
+		return "", err
+	}
 	root.Close()
 	if err := publishDirectory(s.extdir, staging, dir, s.immutable); err != nil {
 		return "", err

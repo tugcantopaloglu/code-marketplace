@@ -184,6 +184,29 @@ the updated manifest directly.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the isolated Microsoft VS Code
 signature integration test.
 
+### Sandbox-approved offline imports
+
+Use the gated importer for scheduled imports from an offline share:
+
+```console
+./code-marketplace import --incoming-dir ./incoming --extensions-dir ./extensions --sandbox-trust ./sandbox-trust.json
+```
+
+Every VSIX requires a matching `.sigzip` and an authenticated clean
+`.sandbox.json` report. The importer returns JSON results, preserves private
+approval receipts, skips unchanged packages, and refuses to overwrite existing
+versions with different bytes. Missing dependencies are listed in
+`missingDependencies` after the batch finishes.
+
+See [SANDBOX.md](SANDBOX.md) for the signed report contract, THOR integration
+boundary, public-key trust configuration, and legacy import migration.
+See [helm/README.md](helm/README.md) for the offline Kubernetes deployment.
+
+Local catalog publication and update dates represent imports into this
+marketplace. They are persisted separately from the unchanged signed VSIX;
+existing packages without this metadata use the stored manifest's modification
+time. These are not the original upstream Marketplace publication dates.
+
 ## Removing extensions
 
 Extensions can be removed from the marketplace by ID and version or `--all` to

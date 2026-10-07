@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Require authenticated clean sandbox approval for the offline `import` command;
+  validate Ed25519 report signatures, package hashes, scan completion, and expiry.
+- Record private import receipts and reports, return per-file JSON results,
+  detect immutable version conflicts, and report missing dependencies.
+- Add an optional sandbox-gated Kubernetes import CronJob, separate read-only
+  marketplace storage, existing PVC support, readiness checks, and network policy.
+- Persist local catalog timestamps and expose matching platform-specific assets.
+
 - Discover matching `.sigzip` sidecars in single-file and directory imports;
   support `--require-signature` for the offline share workflow.
 - Add an isolated Microsoft VS Code integration test for signed installation,
@@ -20,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   size and SHA-256 matching before writing an extension.
 
 ### Changed
+
+- Run the container as a non-root user on port 8080 and harden Helm security defaults.
+- Use native shared file locks that release automatically when a process exits.
 
 - Validate package identities and ZIP paths before importing, enforce package
   and expansion limits, and honor download cancellation and timeouts.
