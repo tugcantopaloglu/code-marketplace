@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/coder/code-marketplace/storage"
@@ -75,6 +76,6 @@ func TestCorruptArchivePreservesPublishedVersion(t *testing.T) {
 	entries, err := os.ReadDir(st.dir)
 	require.NoError(t, err)
 	for _, entry := range entries {
-		require.False(t, entry.Name()[0] == '.')
+		require.False(t, strings.HasPrefix(entry.Name(), ".import-") || strings.HasPrefix(entry.Name(), ".previous-"))
 	}
 }

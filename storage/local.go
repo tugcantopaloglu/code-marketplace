@@ -30,6 +30,7 @@ type Local struct {
 	listMutex      sync.Mutex
 	extdir         string
 	logger         slog.Logger
+	immutable      bool
 }
 
 type LocalOptions struct {
@@ -37,6 +38,7 @@ type LocalOptions struct {
 	// no cache.
 	ListCacheDuration time.Duration
 	ExtDir            string
+	Immutable         bool
 }
 
 func NewLocalStorage(options *LocalOptions, logger slog.Logger) (*Local, error) {
@@ -50,6 +52,7 @@ func NewLocalStorage(options *LocalOptions, logger slog.Logger) (*Local, error) 
 		extdir:       extdir,
 		listDuration: options.ListCacheDuration,
 		logger:       logger,
+		immutable:    options.Immutable,
 	}, nil
 }
 
@@ -179,7 +182,7 @@ func (s *Local) AddExtension(ctx context.Context, manifest *VSIXManifest, vsix [
 	}
 
 	root.Close()
-	if err := publishDirectory(s.extdir, staging, dir); err != nil {
+	if err := publishDirectory(s.extdir, staging, dir, s.immutable); err != nil {
 		return "", err
 	}
 	s.listMutex.Lock()

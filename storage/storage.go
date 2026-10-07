@@ -133,6 +133,7 @@ type Options struct {
 	Repo                   string
 	Logger                 slog.Logger
 	ListCacheDuration      time.Duration
+	Immutable              bool
 }
 
 type extension struct {
@@ -272,6 +273,7 @@ func NewStorage(ctx context.Context, options *Options) (Storage, error) {
 		store, err = NewLocalStorage(&LocalOptions{
 			ListCacheDuration: options.ListCacheDuration,
 			ExtDir:            options.ExtDir,
+			Immutable:         options.Immutable,
 		}, options.Logger)
 	default:
 		return nil, xerrors.Errorf("must provide an Artifactory repository or local directory")

@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"time"
@@ -116,9 +118,27 @@ func server() *cobra.Command {
 				Storage:     store,
 				Logger:      logger,
 				MaxPageSize: maxpagesize,
+				Ready: func() error {
+					if opts.ExtDir == "" {
+						return nil
+					}
+					file, err := os.Open(opts.ExtDir)
+					if err != nil {
+						return err
+					}
+					defer file.Close()
+					_, err = file.Readdirnames(1)
+					if errors.Is(err, io.EOF) {
+						return nil
+					}
+					return err
+				},
 			})
 			server := &http.Server{
-				Handler: mapi.Handler,
+				Handler:           mapi.Handler,
+				ReadHeaderTimeout: 5 * time.Second,
+				IdleTimeout:       60 * time.Second,
+				MaxHeaderBytes:    1 << 20,
 				BaseContext: func(_ net.Listener) context.Context {
 					return ctx
 				},

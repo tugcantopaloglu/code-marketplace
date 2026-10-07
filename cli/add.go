@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/xerrors"
 
+	"github.com/coder/code-marketplace/sandbox"
 	"github.com/coder/code-marketplace/storage"
 	"github.com/coder/code-marketplace/util"
 )
@@ -18,6 +20,9 @@ func add() *cobra.Command {
 	addFlags, opts := serverFlags()
 	var signatureSource string
 	var requireSignature bool
+	var trustPath, reportPath string
+	var requireReport bool
+	var reportMaxAge time.Duration
 	cmd := &cobra.Command{
 		Use:   "add <source>",
 		Short: "Add an extension to the marketplace",
@@ -30,6 +35,17 @@ func add() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
+			var policy *sandbox.Policy
+			if requireReport || reportPath != "" || trustPath != "" {
+				if trustPath == "" {
+					return fmt.Errorf("--sandbox-trust is required for sandbox approval")
+				}
+				var err error
+				policy, err = sandbox.LoadPolicy(trustPath, reportMaxAge)
+				if err != nil {
+					return err
+				}
+			}
 
 			store, err := storage.NewStorage(ctx, opts)
 			if err != nil {
@@ -48,6 +64,12 @@ func add() *cobra.Command {
 			if isDir && signatureSource != "" {
 				return xerrors.Errorf("--signature requires a single VSIX file or URL")
 			}
+			if isDir && reportPath != "" {
+				return fmt.Errorf("--sandbox-report requires a single local VSIX")
+			}
+			if policy != nil && (strings.HasPrefix(args[0], "http://") || strings.HasPrefix(args[0], "https://")) {
+				return fmt.Errorf("sandbox approval requires a local VSIX")
+			}
 
 			var failed []string
 			if isDir {
@@ -59,7 +81,7 @@ func add() *cobra.Command {
 					if file.IsDir() || !strings.EqualFold(filepath.Ext(file.Name()), ".vsix") {
 						continue
 					}
-					s, err := doAdd(ctx, filepath.Join(args[0], file.Name()), "", requireSignature, store)
+					s, err := doAdd(ctx, filepath.Join(args[0], file.Name()), "", requireSignature, policy, "", store)
 					if err != nil {
 						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Failed to unpack %s: %s\n", file.Name(), err.Error())
 						failed = append(failed, file.Name())
@@ -68,7 +90,7 @@ func add() *cobra.Command {
 					}
 				}
 			} else {
-				s, err := doAdd(ctx, args[0], signatureSource, requireSignature, store)
+				s, err := doAdd(ctx, args[0], signatureSource, requireSignature, policy, reportPath, store)
 				if err != nil {
 					return err
 				}
@@ -87,11 +109,15 @@ func add() *cobra.Command {
 	addFlags(cmd)
 	cmd.Flags().StringVar(&signatureSource, "signature", "", "The detached signature archive file or URL for this VSIX.")
 	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "Reject packages without a matching signature archive.")
+	cmd.Flags().BoolVar(&requireReport, "require-sandbox-report", false, "Require an authenticated clean sandbox report before importing.")
+	cmd.Flags().StringVar(&trustPath, "sandbox-trust", "", "Trusted sandbox public keys JSON file; enables mandatory sandbox approval.")
+	cmd.Flags().StringVar(&reportPath, "sandbox-report", "", "Sandbox report for a single local VSIX; defaults to the matching .sandbox.json sidecar.")
+	cmd.Flags().DurationVar(&reportMaxAge, "sandbox-max-age", 24*time.Hour, "Maximum age and validity interval of sandbox reports.")
 
 	return cmd
 }
 
-func doAdd(ctx context.Context, source, signatureSource string, requireSignature bool, store storage.Storage) ([]string, error) {
+func doAdd(ctx context.Context, source, signatureSource string, requireSignature bool, policy *sandbox.Policy, reportPath string, store storage.Storage) ([]string, error) {
 	if signatureSource == "" && !strings.HasPrefix(source, "http://") && !strings.HasPrefix(source, "https://") {
 		candidate := strings.TrimSuffix(source, filepath.Ext(source)) + ".sigzip"
 		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
@@ -105,6 +131,18 @@ func doAdd(ctx context.Context, source, signatureSource string, requireSignature
 	vsix, err := storage.ReadVSIX(ctx, source)
 	if err != nil {
 		return nil, err
+	}
+	if policy != nil {
+		if reportPath == "" {
+			reportPath = strings.TrimSuffix(source, filepath.Ext(source)) + ".sandbox.json"
+		}
+		report, err := sandbox.ReadFile(reportPath)
+		if err != nil {
+			return nil, fmt.Errorf("sandbox report is required: %w", err)
+		}
+		if _, err := policy.Verify(report, vsix, time.Now().UTC()); err != nil {
+			return nil, err
+		}
 	}
 
 	// The manifest is required to know where to place the extension since it

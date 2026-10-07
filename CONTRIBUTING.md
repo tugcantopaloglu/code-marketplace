@@ -92,6 +92,39 @@ test. The resulting evidence directory contains the editor and server logs.
 This tests the VS Code installation backend through its CLI. The Extensions
 view's Install button still needs a separate interactive check.
 
+## Sandbox and offline integration tests
+
+The sandbox unit tests cover signed clean reports, non-clean and pending results,
+hash mismatches, expired and future reports, unknown keys, forged signatures,
+and malformed or ambiguous JSON. Import tests cover waiting sidecars, repeated
+imports, conflicting versions, dependency reporting, and shared file locks.
+
+With Node.js available, test the full local import and restart path using an
+existing signed package:
+
+```powershell
+go build -o ./bin/code-marketplace-next.exe ./cmd/marketplace
+./scripts/test-offline-import.ps1 -VSIX ./extension.vsix -Signature ./extension.sigzip
+```
+
+This creates synthetic sandbox approvals solely for testing, imports the real
+signed extension through the mandatory gate, restarts the marketplace, checks
+the asset hashes, and verifies that receipts cannot be downloaded. The importer
+reads only local inputs. This is not a real THOR scan or a live Kubernetes test.
+
+The VS Code integration test also accepts `-SandboxTrust`, `-SandboxReport`, and
+`-PreviousSandboxReport` to exercise gated imports before real installation and
+updating. Synthetic test reports can be created with:
+
+```console
+node scripts/create-sandbox-test-report.cjs --test-only ./test-reports ./new.vsix ./old.vsix
+```
+
+Never configure a production importer to trust these synthetic keys. Use
+`helm lint ./helm` and `helm lint ./helm -f ./helm/values-offline.yaml` to check
+the chart. Set the registry, image tag, PVC names, ingress namespace, and trusted
+key ConfigMap to the actual deployment values before the live cluster test.
+
 ## Releasing
 
 1. Check that the changelog lists all the important changes.

@@ -61,6 +61,7 @@ type Options struct {
 	RateLimit   int
 	Storage     storage.Storage
 	MaxPageSize int
+	Ready       func() error
 }
 
 type API struct {
@@ -105,6 +106,15 @@ func New(options *Options) *API {
 
 	r.Get("/healthz", func(rw http.ResponseWriter, r *http.Request) {
 		httpapi.WriteBytes(rw, http.StatusOK, []byte("API server running"))
+	})
+	r.Get("/readyz", func(rw http.ResponseWriter, r *http.Request) {
+		if options.Ready != nil {
+			if err := options.Ready(); err != nil {
+				httpapi.WriteBytes(rw, http.StatusServiceUnavailable, []byte("Storage is not ready"))
+				return
+			}
+		}
+		httpapi.WriteBytes(rw, http.StatusOK, []byte("API server ready"))
 	})
 
 	// TODO: Read API version header and output a warning if it has changed since

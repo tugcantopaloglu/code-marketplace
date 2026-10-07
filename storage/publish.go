@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/coder/code-marketplace/filelock"
 )
 
-func publishDirectory(directory, staging, destination string) error {
+func publishDirectory(directory, staging, destination string, immutable bool) error {
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return err
@@ -21,16 +23,18 @@ func publishDirectory(directory, staging, destination string) error {
 	}
 	source := filepath.Base(staging)
 	lock := fmt.Sprintf(".lock-%x", sha256.Sum256([]byte(strings.ToLower(filepath.ToSlash(target)))))
-	file, err := root.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	release, err := filelock.Acquire(root, lock)
 	if err != nil {
 		return fmt.Errorf("package is being updated: %w", err)
 	}
-	file.Close()
-	defer root.Remove(lock)
+	defer release()
 	if _, err := root.Stat(target); os.IsNotExist(err) {
 		return root.Rename(source, target)
 	} else if err != nil {
 		return err
+	}
+	if immutable {
+		return fmt.Errorf("published version already exists")
 	}
 	err = fs.WalkDir(root.FS(), filepath.ToSlash(target), func(_ string, entry fs.DirEntry, err error) error {
 		if err != nil {
