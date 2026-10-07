@@ -19,7 +19,7 @@ type Config struct {
 	Address       string          `yaml:"address"`
 	PublicURL     string          `yaml:"publicURL"`
 	ExtensionsDir string          `yaml:"extensionsDir"`
-	IncomingDir   string          `yaml:"incomingDir"`
+	IncomingDir   string          `yaml:"incomingDir,omitempty"`
 	AuditFile     string          `yaml:"auditFile"`
 	LDAP          LDAPConfig      `yaml:"ldap"`
 	Session       SessionConfig   `yaml:"session"`
@@ -148,8 +148,8 @@ func (c *Config) Validate() error {
 	if c.Session.Lifetime < time.Minute || c.Session.Lifetime > 8*time.Hour || c.Session.IdleTimeout < time.Minute || c.Session.IdleTimeout > c.Session.Lifetime || c.Session.RecheckInterval < time.Second || c.Session.RecheckInterval > time.Minute || c.Session.MaxSessions < 1 || c.Session.MaxSessions > 10000 {
 		return fmt.Errorf("invalid management session limits")
 	}
-	if c.ExtensionsDir == "" || c.IncomingDir == "" || c.AuditFile == "" {
-		return fmt.Errorf("extensionsDir, incomingDir and auditFile are required")
+	if c.ExtensionsDir == "" || c.AuditFile == "" {
+		return fmt.Errorf("extensionsDir and auditFile are required")
 	}
 	if c.Publisher.Mode != "verified" && c.Publisher.Mode != "allowlist" && c.Publisher.Mode != "any" {
 		return fmt.Errorf("invalid publisher mode")
@@ -157,19 +157,25 @@ func (c *Config) Validate() error {
 	if c.Publisher.Mode != "any" && (c.Publisher.PolicyFile == "" || c.Publisher.MaxAge <= 0) {
 		return fmt.Errorf("publisher policyFile and maxAge are required")
 	}
-	for _, dir := range []string{c.ExtensionsDir, c.IncomingDir, filepath.Dir(c.AuditFile)} {
+	directories := []string{c.ExtensionsDir, filepath.Dir(c.AuditFile)}
+	if c.IncomingDir != "" {
+		directories = append(directories, c.IncomingDir)
+	}
+	for _, dir := range directories {
 		info, err := os.Stat(dir)
 		if err != nil || !info.IsDir() {
 			return fmt.Errorf("management directory is unavailable: %s", dir)
 		}
 	}
-	for _, pair := range [][2]string{{c.ExtensionsDir, c.IncomingDir}, {c.ExtensionsDir, filepath.Dir(c.AuditFile)}, {c.IncomingDir, filepath.Dir(c.AuditFile)}} {
-		if overlap(pair[0], pair[1]) {
-			return fmt.Errorf("published, incoming and audit directories must be separate")
+	for i, first := range directories {
+		for _, second := range directories[i+1:] {
+			if overlap(first, second) {
+				return fmt.Errorf("published, incoming and audit directories must be separate")
+			}
 		}
 	}
 	for _, file := range []string{c.LDAP.BindPasswordFile, c.LDAP.CAFile, c.Publisher.PolicyFile} {
-		if file != "" && (overlap(c.IncomingDir, file) || overlap(c.ExtensionsDir, file)) {
+		if file != "" && ((c.IncomingDir != "" && overlap(c.IncomingDir, file)) || overlap(c.ExtensionsDir, file)) {
 			return fmt.Errorf("trusted configuration and credentials must be outside package storage")
 		}
 	}

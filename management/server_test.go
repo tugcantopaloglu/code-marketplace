@@ -1,15 +1,9 @@
 package management
 
 import (
-	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,7 +14,6 @@ import (
 	"time"
 
 	"cdr.dev/slog"
-	"github.com/coder/code-marketplace/publisher"
 	"github.com/coder/code-marketplace/storage"
 	"github.com/coder/code-marketplace/testutil"
 	"github.com/stretchr/testify/require"
@@ -123,12 +116,19 @@ func TestSessionAndAuthorization(t *testing.T) {
 	require.NotContains(t, string(data), cookie.Value)
 }
 
-func TestReaderCannotMutate(t *testing.T) {
-	s, _ := testServer(t, "reader")
-	cookie, csrf := signIn(t, s)
-	require.Equal(t, http.StatusOK, call(s, "GET", "catalog", "", cookie, "").Code)
-	for _, action := range []string{"revoke", "uploads"} {
-		require.Equal(t, http.StatusForbidden, call(s, "POST", action, "{}", cookie, csrf).Code)
+func TestManagementIsReadOnlyForEveryGroup(t *testing.T) {
+	for _, role := range []string{"reader", "admin"} {
+		s, _ := testServer(t, role)
+		cookie, csrf := signIn(t, s)
+		require.Equal(t, http.StatusOK, call(s, "GET", "catalog", "", cookie, "").Code)
+		for _, action := range []string{"revoke", "uploads"} {
+			require.Equal(t, http.StatusMethodNotAllowed, call(s, "POST", action, "{}", cookie, csrf).Code)
+		}
+		for _, directory := range []string{s.config.ExtensionsDir, s.config.IncomingDir} {
+			entries, err := os.ReadDir(directory)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		}
 	}
 }
 
@@ -186,96 +186,38 @@ func TestConcurrentLogoutDoesNotRestoreSession(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, call(s, "GET", "session", "", cookie, "").Code)
 }
 
-func TestRevocationAndAuditFailure(t *testing.T) {
+func TestCatalogAuditFailure(t *testing.T) {
 	s, _ := testServer(t, "admin")
-	cookie, csrf := signIn(t, s)
-	ext := testutil.Extensions[0]
-	version := storage.Version{Version: ext.LatestVersion}
-	vsix := testutil.CreateVSIXFromExtension(t, ext, version)
+	cookie, _ := signIn(t, s)
+	extension := testutil.Extensions[0]
+	version := storage.Version{Version: extension.LatestVersion}
+	vsix := testutil.CreateVSIXFromExtension(t, extension, version)
 	manifest, err := storage.ReadVSIXManifest(vsix)
 	require.NoError(t, err)
 	store, err := storage.NewStorage(context.Background(), &storage.Options{ExtDir: s.config.ExtensionsDir, Logger: slog.Make()})
 	require.NoError(t, err)
 	_, err = store.AddExtension(context.Background(), manifest, vsix)
 	require.NoError(t, err)
-	body, err := json.Marshal(map[string]any{"publisher": ext.Publisher, "extension": ext.Name, "version": version, "reason": "operator review"})
-	require.NoError(t, err)
-	for _, invalid := range []string{strings.Replace(string(body), ext.Publisher, "../escape", 1), strings.Replace(string(body), "operator review", "", 1)} {
-		require.Equal(t, http.StatusBadRequest, call(s, "POST", "revoke", invalid, cookie, csrf).Code)
-	}
 	originalAudit := s.config.AuditFile
 	s.config.AuditFile = filepath.Join(t.TempDir(), "missing", "audit.jsonl")
-	require.Equal(t, http.StatusServiceUnavailable, call(s, "POST", "revoke", string(body), cookie, csrf).Code)
-	require.DirExists(t, filepath.Join(s.config.ExtensionsDir, ext.Publisher, ext.Name, version.String()))
+	require.Equal(t, http.StatusServiceUnavailable, call(s, "GET", "catalog", "", cookie, "").Code)
+	require.DirExists(t, filepath.Join(s.config.ExtensionsDir, extension.Publisher, extension.Name, version.String()))
 	s.config.AuditFile = originalAudit
-	require.Equal(t, http.StatusOK, call(s, "POST", "revoke", string(body), cookie, csrf).Code)
-	require.NoDirExists(t, filepath.Join(s.config.ExtensionsDir, ext.Publisher, ext.Name, version.String()))
-	root, err := os.OpenRoot(s.config.ExtensionsDir)
-	require.NoError(t, err)
-	defer root.Close()
-	revoked, err := storage.IsRevoked(root, ext.Publisher, ext.Name, version)
-	require.NoError(t, err)
-	require.True(t, revoked)
+	response := call(s, "GET", "catalog", "", cookie, "")
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Contains(t, response.Body.String(), extension.Publisher)
 }
 
-func TestVerifiedUpload(t *testing.T) {
-	s, _ := testServer(t, "admin")
-	public, private, err := ed25519.GenerateKey(rand.Reader)
+func TestManagementWithoutIncomingStorage(t *testing.T) {
+	config := testConfig(t)
+	config.IncomingDir = ""
+	require.NoError(t, config.Validate())
+	auth := &testAuth{user: User{Name: "alice", DN: "CN=Alice,OU=Users,DC=example", Role: "reader"}, password: "test-user-password"}
+	server, err := New(config, auth)
 	require.NoError(t, err)
-	path := filepath.Join(filepath.Dir(s.config.LDAP.BindPasswordFile), "policy.json")
-	policy, err := json.Marshal(map[string]any{"keys": map[string]string{"collector": base64.StdEncoding.EncodeToString(public)}, "allowedPublishers": []string{}})
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(path, policy, 0o600))
-	s.config.Publisher = PublisherConfig{Mode: "verified", PolicyFile: path, MaxAge: time.Hour}
-	cookie, csrf := signIn(t, s)
-	ext := testutil.Extensions[0]
-	version := storage.Version{Version: ext.LatestVersion}
-	vsix := testutil.CreateVSIXFromExtension(t, ext, version)
-	signature := testutil.CreateSignatureArchive(t, vsix)
-	claims := publisher.Claims{SchemaVersion: 1, Source: publisher.Marketplace, Publisher: publisher.Identity{ID: "5f5636e7-69ed-4afe-b5d6-8d231fb3d3ee", Name: ext.Publisher, Domain: "https://example.com", DomainVerified: true}, Extension: ext.Name, Version: version, SHA256: fmt.Sprintf("%x", sha256.Sum256(vsix)), SignatureHash: fmt.Sprintf("%x", sha256.Sum256(signature)), ObservedAt: time.Now().Add(-time.Minute), ExpiresAt: time.Now().Add(30 * time.Minute)}
-	report, err := publisher.Sign(claims, "collector", private)
-	require.NoError(t, err)
-	upload := func(parts map[string][]byte) *httptest.ResponseRecorder {
-		var body bytes.Buffer
-		writer := multipart.NewWriter(&body)
-		for name, data := range parts {
-			part, err := writer.CreateFormFile(name, "../../ignored-name")
-			require.NoError(t, err)
-			_, err = part.Write(data)
-			require.NoError(t, err)
-		}
-		require.NoError(t, writer.Close())
-		req := httptest.NewRequest("POST", s.config.PublicURL+"/admin/api/uploads", &body)
-		req.Header.Set("Origin", s.config.PublicURL)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req.Header.Set("X-CSRF-Token", csrf)
-		req.AddCookie(cookie)
-		response := httptest.NewRecorder()
-		s.ServeHTTP(response, req)
-		return response
-	}
-	require.Equal(t, http.StatusBadRequest, upload(map[string][]byte{"vsix": vsix, "signature": signature}).Code)
-	require.Equal(t, http.StatusBadRequest, upload(map[string][]byte{"vsix": vsix, "signature": signature, "publisherReport": []byte(`{"fake":true}`)}).Code)
-	entries, err := os.ReadDir(s.config.IncomingDir)
-	require.NoError(t, err)
-	for _, entry := range entries {
-		require.True(t, strings.HasPrefix(entry.Name(), "."))
-	}
-	response := upload(map[string][]byte{"vsix": vsix, "signature": signature, "publisherReport": report})
-	require.Equal(t, http.StatusCreated, response.Code, response.Body.String())
-	manifest, err := storage.ReadVSIXManifest(vsix)
-	require.NoError(t, err)
-	base := storage.ExtensionVSIXNameFromManifest(manifest)
-	actual, err := os.ReadFile(filepath.Join(s.config.IncomingDir, base+".vsix"))
-	require.NoError(t, err)
-	require.Equal(t, vsix, actual)
-	require.NoFileExists(t, filepath.Join(s.config.IncomingDir, base+".sandbox.json"))
-	require.Equal(t, http.StatusConflict, upload(map[string][]byte{"vsix": vsix, "signature": signature, "publisherReport": report}).Code)
-	entries, err = os.ReadDir(s.config.ExtensionsDir)
-	require.NoError(t, err)
-	require.Empty(t, entries)
+	cookie, _ := signIn(t, server)
+	require.Equal(t, http.StatusOK, call(server, "GET", "catalog", "", cookie, "").Code)
 }
-
 func TestYAMLConfig(t *testing.T) {
 	config := testConfig(t)
 	data, err := yaml.Marshal(config)

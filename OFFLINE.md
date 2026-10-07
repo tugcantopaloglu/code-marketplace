@@ -94,7 +94,7 @@ read-only-root, dropped-capability and service-account restrictions. Use the bun
 chart file instead of fetching a remote chart:
 
 ```console
-helm upgrade --install marketplace ./code-marketplace-1.6.0.tgz -f ./values-offline.yaml -f ./values-admin.yaml -f ./values-internal.yaml
+helm upgrade --install marketplace ./code-marketplace-1.6.1.tgz -f ./values-offline.yaml -f ./values-admin.yaml -f ./values-internal.yaml
 ```
 
 The same image serves marketplace, importer, management, and optional chart tests.

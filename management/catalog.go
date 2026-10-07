@@ -6,10 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"cdr.dev/slog"
-	"github.com/coder/code-marketplace/filelock"
 	"github.com/coder/code-marketplace/ingest"
 	"github.com/coder/code-marketplace/publisher"
 	"github.com/coder/code-marketplace/storage"
@@ -103,44 +101,4 @@ func (s *Server) policy(w http.ResponseWriter, _ *http.Request, _ session) {
 	}
 	sort.Strings(allowed)
 	writeJSON(w, http.StatusOK, map[string]any{"mode": policy.Mode, "allowedPublishers": allowed, "maxAge": s.config.Publisher.MaxAge.String(), "signatureRequired": true, "sandboxRequired": true})
-}
-
-func (s *Server) revoke(w http.ResponseWriter, r *http.Request, current session) {
-	var record storage.Revocation
-	if err := decode(r, &record); err != nil {
-		fail(w, http.StatusBadRequest, "Invalid revocation request")
-		return
-	}
-	if err := storage.ValidateIdentity(record.Publisher, record.Extension, record.Version); err != nil || strings.TrimSpace(record.Reason) == "" || len(record.Reason) > 512 {
-		fail(w, http.StatusBadRequest, "Valid package identity and reason required")
-		return
-	}
-	record.Actor = current.User.Name
-	target := record.Publisher + "." + record.Extension + "@" + record.Version.String()
-	root, err := os.OpenRoot(s.config.ExtensionsDir)
-	if err != nil {
-		fail(w, http.StatusServiceUnavailable, "Storage unavailable")
-		return
-	}
-	defer root.Close()
-	release, err := filelock.Acquire(root, ".ingest.lock")
-	if err != nil {
-		fail(w, http.StatusConflict, "Import or management operation is running")
-		return
-	}
-	defer release()
-	if err := s.audit(r, current.User, "revoke", target, "intent"); err != nil {
-		fail(w, http.StatusServiceUnavailable, "Audit storage unavailable")
-		return
-	}
-	if err := storage.RevokeVersion(root, record); err != nil {
-		s.audit(r, current.User, "revoke", target, "failed")
-		fail(w, http.StatusConflict, "Unable to revoke this version")
-		return
-	}
-	if err := s.audit(r, current.User, "revoke", target, "success"); err != nil {
-		fail(w, http.StatusServiceUnavailable, "Version revoked; final audit write failed")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked", "extension": target})
 }

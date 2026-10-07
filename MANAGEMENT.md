@@ -8,8 +8,8 @@ code-marketplace admin --config config/admin.example.yaml
 
 The public UI is `/admin/`. This listener provides no public VS Code gallery or
 download endpoints. The normal `server` process remains separate and mounts
-published storage read-only. Management requires existing, separate published,
-incoming, and audit directories. Relative paths resolve against the YAML file.
+published storage read-only. Management requires existing, separate published
+and audit directories. Relative paths resolve against the YAML file.
 Unknown keys, duplicate keys, multiple documents, and YAML aliases fail startup.
 
 ## Authentication and authorization
@@ -29,10 +29,9 @@ groups using Microsoft's transitive membership matching rule. Nested groups are
 supported; primary-group membership alone is not sufficient. Configure dedicated
 security groups and give the service account only the required read permissions.
 
-`readerGroups` permits catalog, import results, and publisher policy access.
-`adminGroups` also permits uploads and version revocations, with admin taking
-precedence when both roles match. No configured group means no access. Sessions
-recheck AD at most every minute and before every administrative mutation. AD
+`readerGroups` and `adminGroups` both permit read-only catalog, import results,
+and publisher policy access. Admin group membership does not enable data changes.
+No configured group means no access. Sessions recheck AD at most every minute. AD
 failure or removed membership invalidates the session. Password changes alone do
 not immediately invalidate sessions; absolute lifetime and idle timeout still apply.
 
@@ -40,62 +39,43 @@ The browser gets a random opaque `__Host-marketplace-admin` cookie with Secure,
 HttpOnly, Path `/`, and SameSite Strict. Session records are held in memory, expire
 after configurable absolute/idle limits, and disappear on restart. Helm runs one
 admin replica with Recreate strategy. Logout removes the server-side session.
-Mutations require the configured HTTPS Origin and a session CSRF header. Login
+Logout requires the configured HTTPS Origin and a session CSRF header. Login
 requires that same Origin and JSON. The service has no CORS allowance, uses a CSP
 without inline/external scripts, and limits login attempts, active sessions,
-concurrent directory requests, and concurrent uploads.
+and concurrent directory requests.
 
 Terminate HTTPS at a trusted ingress and route only that ingress to the admin
 listener. `publicURL` is an exact origin, such as `https://marketplace-admin.internal`;
 it must match the externally visible host. Forwarded headers never grant identity
 or alter the accepted Origin. Audit remote addresses refer to the actual TCP peer,
 usually the ingress; retain ingress logs for client IP correlation. Login IP limits
-apply to that peer, plus a separate per-account limit. Configure proxy body limits
-and timeouts for permitted upload sizes. No proxy-specific annotations are assumed.
+apply to that peer, plus a separate per-account limit. No proxy-specific
+annotations are assumed.
 
-## Upload and revoke
+## Read-only operation
 
-Uploads accept multipart fields `vsix`, `signature`, `publisherReport`, and the
-optional `sandboxReport`. VSIX and signature are required; publisher provenance is
-required in verified/allowlist mode. The maximum VSIX size is 512 MiB, signature
-34 MiB, each report 64 KiB. Filenames supplied by clients are ignored. The server
-validates package identity, archive limits, signature/hash correspondence, and
-current authenticated publisher policy. A sandbox sidecar is accepted as opaque
-input and must pass the scheduled importer's independent authenticated scan gate.
-The management service never creates a clean scan report or directly publishes an
-uploaded extension. Microsoft VS Code performs the signature certificate check.
+The Graphite Mono interface shows the catalog, admission policy, and latest import
+results. It uses local monospace fonts, graphite surfaces, and monochrome tables;
+no external fonts or UI assets are fetched. Search and refresh only read metadata.
 
-Uploads stage privately on the incoming volume, sync files, and publish sidecars
-before the final VSIX filename. Existing basenames are not overwritten. Scanners
-and importers must ignore hidden staging directories and only process completed
-top-level VSIX files. A failed final rename may leave sidecars for operator cleanup.
-The scanner then creates the matching authenticated report. CronJob results are
-persisted as private `.last-import.json` and shown in the UI. The last run can
-replace earlier results, so retain scheduler logs for historical import decisions.
+Upload and version-revocation endpoints are removed, including for members of
+adminGroups. There is no YAML flag that enables those endpoints. New extensions
+continue to arrive through the existing share/scanner/importer workflow. The UI
+cannot change policies or published packages. Previously stored revocation markers
+continue to block the relevant versions in the importer.
 
-Revoking a version requires a reason. A private revocation marker blocks future
-gated imports of that exact publisher/name/version/platform, including changed
-bytes. The package is moved into a private `.revocation-*.package` directory on the
-same volume and disappears from downloads. Other versions/platforms are unaffected.
-Cached gallery listings may take `server.listCacheDuration` to update; downloads
-stop immediately. Revocation and scheduled imports share a native lock. Packages
-already installed on clients are not remotely uninstalled.
+CronJob results are persisted as private .last-import.json and shown in the import
+view. The last run replaces earlier results, so retain scheduler logs for history.
+Audit JSON lines record authentication, session revocations, and authorized reads
+in auditFile. Unavailable audit storage blocks access that requires an audit record.
+Use a separate persistent audit volume with protected retention and backups.
 
-Markers and archived packages remain for operator review and backup. A failed move
-can leave a marker with the package still present; the UI reports a failure and
-audit intent remains. Inspect storage before retrying. There is no web restore or
-permanent-delete endpoint. To restore, an authorized operator must explicitly review
-the archived package and its approvals, remove the marker, and reimport through the
-normal gates. The trusted legacy `add` CLI can bypass revocation/admission gates;
-restrict published-volume write access to importer, admin, and trusted operators.
-
-Audit JSON lines record authentication, authorization revocation, reads, and mutation
-intent/result in `auditFile`. Intent is synced before a mutation; unavailable audit
-storage blocks it. If the result write fails after a completed mutation, the API
-reports that partial outcome. Use a dedicated persistent audit volume, external log
-retention/rotation, and protected backups. Audit records are not cryptographically
-tamper-proof against administrators with write access to that volume.
-
+The Helm admin pod mounts published storage read-only and has no incoming volume.
+It only writes audit records. Its sessions remain in memory and logout still
+requires CSRF protection. Standalone YAML no longer requires incomingDir; the
+legacy field is accepted for configuration compatibility and does not grant any
+upload capability. Keep the standalone published directory read-only at the OS or
+container boundary as well.
 ## YAML and Kubernetes
 
 Apply `helm/values-offline.yaml` together with `helm/values-admin.yaml`, replacing
@@ -141,14 +121,14 @@ updates and change future CronJobs. Mounted credential/public-policy changes are
 read on subsequent operations after Kubernetes propagates the volume update; a CA
 change requires an admin restart. Tightening admission does not revoke old packages.
 
-Published and incoming PVCs are shared between admin and other components. Use
+Published storage is shared read-only by admin and marketplace. Use
 storage with shared file locks and atomic same-volume rename. RWX supports pods on
 different nodes; RWO requires compatible node placement. Audit must be a separate
-PVC. UID/GID 10001 needs write access to incoming/published/audit; regular server
-has read-only published storage, and importer has read-only incoming storage.
+PVC. Admin UID/GID 10001 needs read access to published storage and write access
+to audit storage. Importer alone requires published-volume writes and reads incoming.
 
 Local tests exercise the real LDAP client over a synthetic LDAPS/StartTLS server,
 untrusted certificates, nested-group filters, group revalidation, expired sessions,
-CSRF/Origin, reader restrictions, publisher-bound uploads, revocations, and audit
-failure. Real organization AD and deployed ingress/storage verification remains
+CSRF/Origin, removed mutation endpoints for both roles, and audit failure.
+Real organization AD and deployed ingress/storage verification remains
 necessary when those environment values become available.

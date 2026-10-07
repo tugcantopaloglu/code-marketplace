@@ -35,15 +35,14 @@ type window struct {
 }
 
 type Server struct {
-	config     Config
-	auth       Authenticator
-	mu         sync.Mutex
-	auditMu    sync.Mutex
-	sessions   map[string]session
-	limits     map[string]window
-	ldapSlots  chan struct{}
-	uploadSlot chan struct{}
-	handler    http.Handler
+	config    Config
+	auth      Authenticator
+	mu        sync.Mutex
+	auditMu   sync.Mutex
+	sessions  map[string]session
+	limits    map[string]window
+	ldapSlots chan struct{}
+	handler   http.Handler
 }
 
 func New(config Config, auth Authenticator) (*Server, error) {
@@ -60,18 +59,16 @@ func New(config Config, auth Authenticator) (*Server, error) {
 			return nil, err
 		}
 	}
-	s := &Server{config: config, auth: auth, sessions: map[string]session{}, limits: map[string]window{}, ldapSlots: make(chan struct{}, 8), uploadSlot: make(chan struct{}, 1)}
+	s := &Server{config: config, auth: auth, sessions: map[string]session{}, limits: map[string]window{}, ldapSlots: make(chan struct{}, 8)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("GET /admin/", s.static)
 	mux.HandleFunc("POST /admin/api/login", s.login)
-	mux.HandleFunc("POST /admin/api/logout", s.protected(false, "logout", s.logout))
-	mux.HandleFunc("GET /admin/api/session", s.protected(false, "session", s.currentSession))
-	mux.HandleFunc("GET /admin/api/catalog", s.protected(false, "catalog", s.catalog))
-	mux.HandleFunc("GET /admin/api/imports", s.protected(false, "imports", s.imports))
-	mux.HandleFunc("GET /admin/api/policy", s.protected(false, "policy", s.policy))
-	mux.HandleFunc("POST /admin/api/revoke", s.protected(true, "revoke", s.revoke))
-	mux.HandleFunc("POST /admin/api/uploads", s.protected(true, "upload", s.upload))
+	mux.HandleFunc("POST /admin/api/logout", s.protected("logout", s.logout))
+	mux.HandleFunc("GET /admin/api/session", s.protected("session", s.currentSession))
+	mux.HandleFunc("GET /admin/api/catalog", s.protected("catalog", s.catalog))
+	mux.HandleFunc("GET /admin/api/imports", s.protected("imports", s.imports))
+	mux.HandleFunc("GET /admin/api/policy", s.protected("policy", s.policy))
 	s.handler = s.secure(mux)
 	return s, nil
 }
@@ -102,7 +99,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if r.Method != http.MethodGet && r.URL.Path != "/admin/api/uploads" {
+		if r.Method != http.MethodGet {
 			if r.Header.Get("Content-Type") != "application/json" {
 				fail(w, http.StatusUnsupportedMediaType, "JSON content type required")
 				return
@@ -238,7 +235,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 type operation func(http.ResponseWriter, *http.Request, session)
 
-func (s *Server) protected(admin bool, action string, next operation) http.HandlerFunc {
+func (s *Server) protected(action string, next operation) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(cookieName)
 		if err != nil || len(cookie.Value) != 43 {
@@ -265,7 +262,7 @@ func (s *Server) protected(admin bool, action string, next operation) http.Handl
 			fail(w, http.StatusForbidden, "Invalid CSRF token")
 			return
 		}
-		if admin || now.Sub(current.Checked) >= s.config.Session.RecheckInterval {
+		if now.Sub(current.Checked) >= s.config.Session.RecheckInterval {
 			user, err := s.authenticate(r.Context(), func(ctx context.Context) (User, error) { return s.auth.Authorize(ctx, current.User) })
 			if err != nil || user.Name != current.User.Name || user.DN != current.User.DN || (user.Role != "reader" && user.Role != "admin") {
 				s.mu.Lock()
@@ -278,11 +275,6 @@ func (s *Server) protected(admin bool, action string, next operation) http.Handl
 			current.User = user
 			current.Checked = now
 		}
-		if admin && current.User.Role != "admin" {
-			s.audit(r, current.User, action, "", "denied")
-			fail(w, http.StatusForbidden, "Administrator group required")
-			return
-		}
 		current.LastSeen = now
 		s.mu.Lock()
 		_, ok = s.sessions[key]
@@ -294,7 +286,7 @@ func (s *Server) protected(admin bool, action string, next operation) http.Handl
 			fail(w, http.StatusUnauthorized, "Session revoked")
 			return
 		}
-		if !admin && action != "session" {
+		if action != "session" {
 			if err := s.audit(r, current.User, action, "", "access"); err != nil {
 				fail(w, http.StatusServiceUnavailable, "Audit storage unavailable")
 				return

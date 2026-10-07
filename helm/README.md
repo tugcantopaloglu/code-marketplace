@@ -2,7 +2,7 @@
 
 Optional AD management is configured using `values-admin.yaml` together with
 offline values. See [MANAGEMENT.md](../MANAGEMENT.md) for YAML settings, secure
-LDAP, Secrets, ingress restrictions, upload limits, and PVC requirements. See
+LDAP, Secrets, ingress restrictions, and read-only PVC access. See
 [OFFLINE.md](../OFFLINE.md) for complete offline bundles and internal Harbor pushes.
 The admin component is disabled by default and uses the same application image.
 

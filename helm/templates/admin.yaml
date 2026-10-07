@@ -2,9 +2,6 @@
 {{- if .Values.persistence.artifactory.enabled }}
 {{- fail "The management service requires local PVC storage" }}
 {{- end }}
-{{- if not .Values.importer.enabled }}
-{{- fail "Enable importer when enabling management uploads" }}
-{{- end }}
 {{- if not .Values.admin.networkPolicy.ldapCIDRs }}
 {{- fail "admin.networkPolicy.ldapCIDRs must restrict AD access to internal addresses" }}
 {{- end }}
@@ -17,7 +14,6 @@
 {{- $config := deepCopy .Values.admin.config }}
 {{- $_ := set $config "address" (printf "0.0.0.0:%v" .Values.admin.port) }}
 {{- $_ := set $config "extensionsDir" "/extensions" }}
-{{- $_ := set $config "incomingDir" "/incoming" }}
 {{- $_ := set $config "auditFile" "/audit/admin.jsonl" }}
 {{- $_ := set $config.ldap "bindPasswordFile" "/ad-secret/password" }}
 {{- $_ := set $config.ldap "caFile" "/ad-ca/ldap-ca.pem" }}
@@ -102,12 +98,8 @@ spec:
               readOnly: true
             - name: published
               mountPath: /extensions
+              readOnly: true
               {{- with .Values.persistence.subPath }}
-              subPath: {{ . | quote }}
-              {{- end }}
-            - name: incoming
-              mountPath: /incoming
-              {{- with .Values.importer.incoming.subPath }}
               subPath: {{ . | quote }}
               {{- end }}
             - name: audit
@@ -140,9 +132,7 @@ spec:
         - name: published
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.existingClaim | default (include "code-marketplace.fullname" .) }}
-        - name: incoming
-          persistentVolumeClaim:
-            claimName: {{ .Values.importer.incoming.existingClaim }}
+            readOnly: true
         - name: audit
           persistentVolumeClaim:
             claimName: {{ required "admin.audit.existingClaim is required" .Values.admin.audit.existingClaim }}

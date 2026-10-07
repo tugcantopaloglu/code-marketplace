@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add a separate YAML-configured management API/UI with LDAPS or mandatory
   LDAP StartTLS, nested AD group roles, bounded sessions, CSRF/Origin protection,
-  incoming bundle uploads, durable version revocations, and persistent audit records.
+  read-only catalog/policy/import views, and persistent audit records.
+- Use a minimal Graphite Mono interface and remove upload/revocation endpoints;
+  mount published storage read-only without an admin incoming volume.
 - Persist the latest scheduled import results for management visibility.
 - Add hardened admin Helm deployment, Secrets/CA mounts, internal AD NetworkPolicy,
   and YAML-managed publisher keys and allowlists.

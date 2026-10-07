@@ -16,8 +16,9 @@ network and accessing an internet-hosted marketplace is not allowed.
 
 This marketplace reads extensions from file storage and provides an API for
 editors to consume. An optional separate [management service](MANAGEMENT.md)
-provides AD-authenticated catalog access, incoming uploads, and version revocation.
-Its configuration is YAML. Uploaded packages still pass the offline admission gates.
+provides read-only AD-authenticated catalog, import results, and policy access.
+Its configuration is YAML and its interface uses Graphite Mono. Extensions continue
+to arrive through the shared-folder admission workflow.
 
 ## Deployment
 
