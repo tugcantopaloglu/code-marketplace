@@ -41,6 +41,36 @@ storage backup/snapshot and copying data. CronJob suspension does not stop activ
 jobs. See [CronJob suspension](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#schedule-suspension).
 Keep the original Deployment/Service/Ingress/CronJob YAML for rollback.
 
+## Namespace-limited apply
+
+Use `deploy/rbac/namespace-deployer.yaml` to create the namespaced deployer
+ServiceAccount, Role, and RoleBinding. All three are in `code-marketplace`.
+The role grants application resource updates in that namespace and read-only
+PVC access. It grants no cluster-scoped, RBAC update, storage write, or delete
+permissions. Do not add broader bindings to this account; RBAC permissions are additive.
+
+```console
+pwsh -File scripts/apply-namespace.ps1 -BootstrapAccess -Path deploy/rbac/namespace-deployer.yaml
+pwsh -File scripts/apply-namespace.ps1 -Path ./application-manifests
+```
+
+The bootstrap requires an existing authorized account. Normal apply impersonates
+`system:serviceaccount:code-marketplace:code-marketplace-deployer`; missing
+impersonation rights stop the operation without expanding cluster permissions.
+The wrapper validates the client dry-run JSON before writes, rejects foreign
+namespaces and unsupported/cluster-scoped resources, and applies the validated
+snapshot rather than reopening the original files. It also rejects host access,
+external Services, and PVCs other than `extensions`, and checks the existing
+namespace claim remains Bound to `code-marketplace-data`. `-ValidateOnly` performs
+the manifest scope checks without apply. ConfigMap/Secret JSON generated with
+`kubectl create --dry-run=client --output=json` can be piped through the wrapper.
+
+Keep PV, StorageClass, node configuration, and ingress/DNS controller installations
+outside the application upgrade. Namespace selectors in an application NetworkPolicy
+identify permitted peers without editing those namespaces. Namespaced API writes
+do not isolate shared hardware capacity; retain resource limits and verify storage
+headroom before copying data. See [namespace RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+
 `scripts/prepare-local-volume.sh --inventory /volume` lists candidate publisher
 directories with version manifests, excluding operational directories. Review the
 list; inventory does not establish sandbox or publisher approval. Save reviewed

@@ -7,11 +7,15 @@ on:
     paths:
       - "**.go"
       - "go.sum"
+      - "scripts/**"
+      - "deploy/rbac/**"
       - ".github/workflows/test.yaml"
   pull_request:
     paths:
       - "**.go"
       - "go.sum"
+      - "scripts/**"
+      - "deploy/rbac/**"
       - ".github/workflows/test.yaml"
   workflow_dispatch:
 
@@ -65,3 +69,5 @@ jobs:
         run: go test -race ./management ./ingest
       - if: runner.os == 'Linux'
         run: bash scripts/test-local-volume.sh
+      - shell: pwsh
+        run: ./scripts/test-apply-namespace.ps1
