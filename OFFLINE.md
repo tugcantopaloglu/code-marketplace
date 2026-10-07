@@ -6,6 +6,9 @@ does not download Go modules, container layers, charts, JS, fonts, or external a
 The optional admin only connects to the configured internal AD and DNS endpoints.
 THOR stays on its separately licensed scanner host.
 
+For upgrading an existing shared-folder deployment while preserving its bound
+PVC and scheduler, see [MIGRATION.md](MIGRATION.md).
+
 ## Create a bundle
 
 The connected builder needs Git, the Go version from `go.mod`, Docker, and Helm.

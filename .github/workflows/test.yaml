@@ -63,3 +63,5 @@ jobs:
       - run: make test
       - if: runner.os == 'Linux'
         run: go test -race ./management ./ingest
+      - if: runner.os == 'Linux'
+        run: bash scripts/test-local-volume.sh
