@@ -73,10 +73,15 @@ The token will be used in the `Authorization` header with the value `Bearer
 
 ### Exposing the marketplace
 
-The marketplace must be put behind TLS otherwise code-server will reject
-connecting to the API. This could mean using a TLS-terminating reverse proxy
-like NGINX or Caddy with your own domain and certificates or using a service
-like Cloudflare.
+Expose the marketplace over HTTPS with a certificate trusted by its clients.
+Microsoft VS Code's desktop interface blocks HTTP gallery requests through its
+content security policy, including localhost requests. A successful CLI install
+over HTTP does not establish that the Extensions view will work. Local interface
+tests also need HTTPS and a trusted localhost certificate.
+
+Use a TLS-terminating reverse proxy such as NGINX or Caddy, or a Kubernetes ingress
+with your own domain and certificates. In an offline environment, distribute the
+internal CA certificate to clients before connecting.
 
 When hosting the marketplace behind a reverse proxy set either the `Forwarded`
 header or both the `X-Forwarded-Host` and `X-Forwarded-Proto` headers. These
