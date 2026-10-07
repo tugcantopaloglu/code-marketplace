@@ -85,8 +85,8 @@ is disabled by default. The chart generates its config YAML; passwords stay in
 local files without putting passwords in shell arguments or values files:
 
 ```console
-kubectl create secret generic marketplace-ad-bind --from-file=password=./ad-bind-password.txt
-kubectl create configmap marketplace-ad-ca --from-file=ldap-ca.pem=./organization-ca.pem
+kubectl --namespace code-marketplace create secret generic marketplace-ad-bind --from-file=password=./ad-bind-password.txt
+kubectl --namespace code-marketplace create configmap marketplace-ad-ca --from-file=ldap-ca.pem=./organization-ca.pem
 ```
 
 Create the admin TLS Secret separately with the certificate trusted by clients.

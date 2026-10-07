@@ -11,7 +11,7 @@ Deploy the fork image from your internal registry. The chart defaults to
 or commit image you built. The chart does not create or download that image.
 
 ```console
-helm upgrade --install code-marketplace ./helm -f ./helm/values-offline.yaml
+helm upgrade --install code-marketplace ./helm --namespace code-marketplace -f ./helm/values-offline.yaml
 ```
 
 Replace the example registry, PVC names, ingress hostname, TLS Secret, and
@@ -42,7 +42,7 @@ nodes. The chart does not assume that your storage class supports those operatio
 Deploy the scanner public keys as a trusted ConfigMap, separate from the share:
 
 ```console
-kubectl create configmap marketplace-sandbox-trust --from-file=sandbox-trust.json=./sandbox-trust.json
+kubectl --namespace code-marketplace create configmap marketplace-sandbox-trust --from-file=sandbox-trust.json=./sandbox-trust.json
 ```
 
 Set `importer.sandboxTrust.configMap` to that name. The sandbox signing private

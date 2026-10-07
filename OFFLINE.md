@@ -74,10 +74,13 @@ and [Docker image save](https://docs.docker.com/reference/cli/docker/image/save/
 
 ## Install from the internal image
 
+These examples target the existing `code-marketplace` namespace. Preserve existing
+PV/StorageClass resources. For a manual deployment with a bound PVC, follow
+[the migration guide](MIGRATION.md) instead of installing a new Helm release.
 Create a Kubernetes image pull Secret using a protected existing Docker config:
 
 ```console
-kubectl create secret generic harbor-pull --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson=./config.json
+kubectl --namespace code-marketplace create secret generic harbor-pull --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson=./config.json
 ```
 
 Configure `image.repository`, `image.tag`, and `imagePullSecrets` in the values YAML:
@@ -97,7 +100,7 @@ read-only-root, dropped-capability and service-account restrictions. Use the bun
 chart file instead of fetching a remote chart:
 
 ```console
-helm upgrade --install marketplace ./code-marketplace-1.6.1.tgz -f ./values-offline.yaml -f ./values-admin.yaml -f ./values-internal.yaml
+helm upgrade --install marketplace ./code-marketplace-1.6.1.tgz --namespace code-marketplace -f ./values-offline.yaml -f ./values-admin.yaml -f ./values-internal.yaml
 ```
 
 The same image serves marketplace, importer, management, and optional chart tests.
