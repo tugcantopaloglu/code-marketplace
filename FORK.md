@@ -51,7 +51,9 @@ go build -o ./bin/code-marketplace ./cmd/marketplace
 Release workflows use this repository's release assets and publish to
 `ghcr.io/<owner>/code-marketplace`. Before deploying with Helm, set
 `image.repository` and `image.tag` to the fork image and release you built.
-The inherited chart defaults still point to the upstream image.
+The chart defaults point to this fork's image. For an air-gapped cluster, mirror
+the release image into your internal registry and set `image.repository` to that
+internal image path.
 
 ```console
 VERSION=<version> IMAGE_REPOSITORY=ghcr.io/<owner>/code-marketplace docker buildx bake

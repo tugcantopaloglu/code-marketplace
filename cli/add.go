@@ -17,6 +17,7 @@ import (
 func add() *cobra.Command {
 	addFlags, opts := serverFlags()
 	var signatureSource string
+	var requireSignature bool
 	cmd := &cobra.Command{
 		Use:   "add <source>",
 		Short: "Add an extension to the marketplace",
@@ -55,7 +56,10 @@ func add() *cobra.Command {
 					return err
 				}
 				for _, file := range files {
-					s, err := doAdd(ctx, filepath.Join(args[0], file.Name()), "", store)
+					if file.IsDir() || !strings.EqualFold(filepath.Ext(file.Name()), ".vsix") {
+						continue
+					}
+					s, err := doAdd(ctx, filepath.Join(args[0], file.Name()), "", requireSignature, store)
 					if err != nil {
 						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Failed to unpack %s: %s\n", file.Name(), err.Error())
 						failed = append(failed, file.Name())
@@ -64,7 +68,7 @@ func add() *cobra.Command {
 					}
 				}
 			} else {
-				s, err := doAdd(ctx, args[0], signatureSource, store)
+				s, err := doAdd(ctx, args[0], signatureSource, requireSignature, store)
 				if err != nil {
 					return err
 				}
@@ -82,11 +86,21 @@ func add() *cobra.Command {
 	}
 	addFlags(cmd)
 	cmd.Flags().StringVar(&signatureSource, "signature", "", "The detached signature archive file or URL for this VSIX.")
+	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "Reject packages without a matching signature archive.")
 
 	return cmd
 }
 
-func doAdd(ctx context.Context, source, signatureSource string, store storage.Storage) ([]string, error) {
+func doAdd(ctx context.Context, source, signatureSource string, requireSignature bool, store storage.Storage) ([]string, error) {
+	if signatureSource == "" && !strings.HasPrefix(source, "http://") && !strings.HasPrefix(source, "https://") {
+		candidate := strings.TrimSuffix(source, filepath.Ext(source)) + ".sigzip"
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			signatureSource = candidate
+		}
+	}
+	if requireSignature && signatureSource == "" {
+		return nil, xerrors.Errorf("signature archive is required for %q", source)
+	}
 	// Read in the extension.  In the future we might support stdin as well.
 	vsix, err := storage.ReadVSIX(ctx, source)
 	if err != nil {

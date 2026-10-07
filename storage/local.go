@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,8 +95,10 @@ func (s *Local) list(ctx context.Context) []extension {
 	return list
 }
 
-
 func (s *Local) AddExtension(ctx context.Context, manifest *VSIXManifest, vsix []byte, extra ...File) (string, error) {
+	if err := ValidatePackage(manifest, vsix, extra...); err != nil {
+		return "", err
+	}
 	// Extract the zip to the correct path.
 	identity := manifest.Metadata.Identity
 	dir := filepath.Join(s.extdir, identity.Publisher, identity.ID, Version{
@@ -104,12 +107,29 @@ func (s *Local) AddExtension(ctx context.Context, manifest *VSIXManifest, vsix [
 	}.String())
 
 	// Ensure the target directory exists before opening a root on it.
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(s.extdir, 0o755); err != nil {
 		return "", err
 	}
+	base, err := os.OpenRoot(s.extdir)
+	if err != nil {
+		return "", err
+	}
+	defer base.Close()
+	relative, err := filepath.Rel(s.extdir, dir)
+	if err != nil {
+		return "", err
+	}
+	if err := base.MkdirAll(filepath.Dir(relative), 0o755); err != nil {
+		return "", err
+	}
+	staging, err := os.MkdirTemp(s.extdir, ".import-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(staging)
 	// os.Root restricts all file operations to dir, preventing path traversal
 	// via ".." components, absolute paths, and symlink escapes (Go 1.24+).
-	root, err := os.OpenRoot(dir)
+	root, err := os.OpenRoot(staging)
 	if err != nil {
 		return "", err
 	}
@@ -158,14 +178,39 @@ func (s *Local) AddExtension(ctx context.Context, manifest *VSIXManifest, vsix [
 		}
 	}
 
+	root.Close()
+	if err := publishDirectory(s.extdir, staging, dir); err != nil {
+		return "", err
+	}
+	s.listMutex.Lock()
+	s.listCache = nil
+	s.listMutex.Unlock()
 	return dir, nil
 }
 
 func (s *Local) FileServer() http.Handler {
-	return http.FileServer(http.Dir(s.extdir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		for _, part := range parts {
+			if strings.HasPrefix(part, ".") {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		root, err := os.OpenRoot(s.extdir)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer root.Close()
+		http.FileServerFS(root.FS()).ServeHTTP(w, r)
+	})
 }
 
 func (s *Local) Manifest(ctx context.Context, publisher, name string, version Version) (*VSIXManifest, error) {
+	if err := ValidateIdentity(publisher, name, version); err != nil {
+		return nil, fmt.Errorf("invalid identity: %w", os.ErrNotExist)
+	}
 	reader, err := os.Open(filepath.Join(s.extdir, publisher, name, version.String(), "extension.vsixmanifest"))
 	if err != nil {
 		return nil, err
@@ -191,17 +236,41 @@ func (s *Local) Manifest(ctx context.Context, publisher, name string, version Ve
 }
 
 func (s *Local) RemoveExtension(ctx context.Context, publisher, name string, version Version) error {
-	dir := filepath.Join(s.extdir, publisher, name, version.String())
-	// RemoveAll() will not error if the directory does not exist so check first
-	// as this function should error when removing versions that do not exist.
-	_, err := os.Stat(dir)
+	if ValidateComponent(publisher) != nil || ValidateComponent(name) != nil {
+		return os.ErrNotExist
+	}
+	if version.Version != "" {
+		if err := ValidateIdentity(publisher, name, version); err != nil {
+			return err
+		}
+	} else if version.TargetPlatform != "" {
+		return os.ErrNotExist
+	}
+	root, err := os.OpenRoot(s.extdir)
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(dir)
+	defer root.Close()
+	dir := filepath.Join(publisher, name, version.String())
+	// RemoveAll() will not error if the directory does not exist so check first
+	// as this function should error when removing versions that do not exist.
+	_, err = root.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if err := root.RemoveAll(dir); err != nil {
+		return err
+	}
+	s.listMutex.Lock()
+	s.listCache = nil
+	s.listMutex.Unlock()
+	return nil
 }
 
 func (s *Local) Versions(ctx context.Context, publisher, name string) ([]Version, error) {
+	if ValidateComponent(publisher) != nil || ValidateComponent(name) != nil {
+		return nil, os.ErrNotExist
+	}
 	dir := filepath.Join(s.extdir, publisher, name)
 	versionDirs, err := s.getDirNames(ctx, dir)
 	var versions []Version
@@ -242,7 +311,7 @@ func (s *Local) getDirNames(ctx context.Context, dir string) ([]string, error) {
 	files, err := os.ReadDir(dir)
 	names := []string{}
 	for _, file := range files {
-		if file.IsDir() {
+		if file.IsDir() && !strings.HasPrefix(file.Name(), ".") {
 			names = append(names, file.Name())
 		}
 	}

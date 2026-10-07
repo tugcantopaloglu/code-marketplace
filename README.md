@@ -138,9 +138,21 @@ Use `--signature` to import the existing signature archive for a single VSIX:
 ```
 
 The VSIX and signature sources can independently be local files or HTTP URLs.
-The flag works with local storage and Artifactory. Directory imports do not
-accept a single shared signature archive; import each VSIX and its matching
-signature separately.
+The flag works with local storage and Artifactory. Local file and directory
+imports automatically discover an adjacent signature with the same basename:
+`package.vsix` and `package.sigzip`. A directory import processes only `.vsix`
+files and skips signature archives, subdirectories, and `.part` upload files.
+
+For the offline share workflow, require a signature for every imported package:
+
+```console
+./code-marketplace add ./incoming --require-signature --extensions-dir ./extensions
+```
+
+Finish copying both files before renaming the VSIX from a temporary filename to
+its final `.vsix` name. Missing or mismatched signatures cause that package's
+import to fail without publication. `--signature` applies to a single VSIX and
+cannot supply one shared signature for a directory.
 
 The archive must contain exactly two nonempty files, `.signature.manifest` and
 `.signature.p7s`. The importer checks the package size and SHA-256 digest in the
@@ -163,6 +175,9 @@ acquire a trusted Marketplace signature from its VSIX alone.
 When replacing an existing extension version in a running Artifactory-backed
 deployment, restart the server to reload its manifest cache. Local storage reads
 the updated manifest directly.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the isolated Microsoft VS Code
+signature integration test.
 
 ## Removing extensions
 

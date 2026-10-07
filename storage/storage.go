@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -298,10 +299,14 @@ func ReadVSIXManifest(vsix []byte) (*VSIXManifest, error) {
 // parseVSIXManifest parses an extension manifest from a reader.  If the
 // manifest is invalid it will be returned along with the validation error.
 func parseVSIXManifest(reader io.Reader) (*VSIXManifest, error) {
+	data, err := readLimited(reader, 2<<20)
+	if err != nil {
+		return nil, err
+	}
 	var vm *VSIXManifest
-	decoder := xml.NewDecoder(reader)
+	decoder := xml.NewDecoder(bytes.NewReader(data))
 	decoder.Strict = false
-	err := decoder.Decode(&vm)
+	err = decoder.Decode(&vm)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +329,9 @@ func parseVSIXManifest(reader io.Reader) (*VSIXManifest, error) {
 
 // validateManifest checks a manifest for issues.
 func validateManifest(manifest *VSIXManifest) error {
+	if manifest == nil {
+		return xerrors.Errorf("manifest is required")
+	}
 	identity := manifest.Metadata.Identity
 	if identity.Publisher == "" {
 		return xerrors.Errorf("manifest did not contain a publisher")
@@ -333,7 +341,7 @@ func validateManifest(manifest *VSIXManifest) error {
 		return xerrors.Errorf("manifest did not contain a version")
 	}
 
-	return nil
+	return ValidateIdentity(identity.Publisher, identity.ID, Version{Version: identity.Version, TargetPlatform: identity.TargetPlatform})
 }
 
 // VSIXPackageJSON partially implements Manifest.
@@ -351,7 +359,7 @@ func ReadVSIXPackageJSON(vsix []byte, packageJsonPath string) (*VSIXPackageJSON,
 	}
 	defer vpjr.Close()
 	var pj *VSIXPackageJSON
-	err = json.NewDecoder(vpjr).Decode(&pj)
+	err = json.NewDecoder(io.LimitReader(vpjr, 4<<20)).Decode(&pj)
 	if err != nil {
 		return nil, err
 	}
@@ -363,10 +371,20 @@ func ReadVSIXPackageJSON(vsix []byte, packageJsonPath string) (*VSIXPackageJSON,
 func ReadVSIX(ctx context.Context, source string) ([]byte, error) {
 	if !strings.HasPrefix(source, "http://") && !strings.HasPrefix(source, "https://") {
 		// Assume it is a local file path.
-		return os.ReadFile(source)
+		file, err := os.Open(source)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		return readLimited(file, MaxPackageSize)
 	}
 
-	resp, err := http.Get(source)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -376,10 +394,18 @@ func ReadVSIX(ctx context.Context, source string) ([]byte, error) {
 		return nil, xerrors.Errorf("error retrieving vsix: status code %d", resp.StatusCode)
 	}
 
-	return io.ReadAll(&io.LimitedReader{
-		R: resp.Body,
-		N: 100 * 1000 * 1000, // 100 MB
-	})
+	return readLimited(resp.Body, MaxPackageSize)
+}
+
+func readLimited(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, xerrors.Errorf("file exceeds the %d byte limit", limit)
+	}
+	return data, nil
 }
 
 // ExtensionIDFromManifest returns the full ID of an extension without the the

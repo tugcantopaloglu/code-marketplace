@@ -217,6 +217,9 @@ func (s *Artifactory) upload(ctx context.Context, endpoint string, r io.Reader) 
 }
 
 func (s *Artifactory) AddExtension(ctx context.Context, manifest *VSIXManifest, vsix []byte, extra ...File) (string, error) {
+	if err := ValidatePackage(manifest, vsix, extra...); err != nil {
+		return "", err
+	}
 	// Extract the zip to the correct path.
 	identity := manifest.Metadata.Identity
 	dir := path.Join(identity.Publisher, identity.ID, Version{

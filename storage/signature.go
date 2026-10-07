@@ -40,7 +40,7 @@ type Signature struct {
 
 func NewSignatureStorage(logger slog.Logger, includeEmptySignatures bool, s Storage) *Signature {
 	if includeEmptySignatures {
-		logger.Info(context.Background(), "Signature storage enabled, if using VS Code on Windows or macOS, this will not work.")
+		logger.Info(context.Background(), "Legacy empty-signature fallback enabled; imported signature archives are served unchanged.")
 	}
 	return &Signature{
 		Logger:                 logger,

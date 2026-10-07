@@ -66,6 +66,32 @@ policy if the marketplace runs on a different domain over HTTP; in this case you
 will need to disable content security policy in your browser or manually edit
 the policy in code-server's source.
 
+## Microsoft VS Code signature integration test
+
+Build the Windows executable, then provide two existing signed VSIX releases
+of the same extension:
+
+```powershell
+go build -o ./bin/code-marketplace.exe ./cmd/marketplace
+./scripts/test-vscode-signature.ps1 -VSIX ./new.vsix -Signature ./new.sigzip -PreviousVSIX ./old.vsix -PreviousSignature ./old.sigzip
+```
+
+Omit the previous release parameters to test installation only. Add
+`-LegacyEmptySignatures` to confirm that `--sign` preserves an imported real
+signature. The test copies the installed Microsoft VS Code into a temporary
+directory, configures that copy to use a loopback marketplace, and uses isolated
+profiles and extension directories. It does not change the installed editor.
+
+The test imports each local VSIX and `.sigzip` pair through the directory import
+command with `--require-signature`. It requires successful signature verification with execution confirmed
+in the real VS Code logs. It verifies asset hashes and requires a structurally
+valid altered VSIX to fail signature verification. Inputs are local files; the
+marketplace does not download anything from the public Marketplace during the
+test. The resulting evidence directory contains the editor and server logs.
+
+This tests the VS Code installation backend through its CLI. The Extensions
+view's Install button still needs a separate interactive check.
+
 ## Releasing
 
 1. Check that the changelog lists all the important changes.

@@ -236,3 +236,35 @@ func TestAddSignature(t *testing.T) {
 		})
 	}
 }
+
+func TestBulkSignaturePairs(t *testing.T) {
+	t.Parallel()
+	for _, signed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("signed=%t", signed), func(t *testing.T) {
+			source := t.TempDir()
+			destination := t.TempDir()
+			ext := testutil.Extensions[0]
+			vsix := testutil.CreateVSIXFromExtension(t, ext, storage.Version{Version: ext.LatestVersion})
+			require.NoError(t, os.WriteFile(filepath.Join(source, "package.vsix"), vsix, 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(source, "package.vsix.part"), []byte("uploading"), 0o644))
+			if signed {
+				require.NoError(t, os.WriteFile(filepath.Join(source, "package.sigzip"), testutil.CreateSignatureArchive(t, vsix), 0o644))
+			}
+			cmd := cli.Root()
+			cmd.SetArgs([]string{"add", source, "--require-signature", "--extensions-dir", destination})
+			cmd.SetOut(new(bytes.Buffer))
+			err := cmd.Execute()
+			if signed {
+				require.NoError(t, err)
+				manifest, err := storage.ReadVSIXManifest(vsix)
+				require.NoError(t, err)
+				require.FileExists(t, filepath.Join(destination, ext.Publisher, ext.Name, ext.LatestVersion, storage.SignatureArchiveFilename(manifest)))
+			} else {
+				require.ErrorContains(t, err, "Failed to add 1 extension")
+				entries, err := os.ReadDir(destination)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			}
+		})
+	}
+}

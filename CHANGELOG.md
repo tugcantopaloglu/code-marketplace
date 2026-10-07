@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Discover matching `.sigzip` sidecars in single-file and directory imports;
+  support `--require-signature` for the offline share workflow.
+- Add an isolated Microsoft VS Code integration test for signed installation,
+  version updates, served asset byte preservation, and signature rejection of
+  structurally valid tampered packages.
 - Import existing detached extension signature archives with `add --signature`
   from local files or HTTP URLs into local storage or Artifactory.
 - Validate signature archive structure, decompressed file sizes, and package
@@ -16,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Validate package identities and ZIP paths before importing, enforce package
+  and expansion limits, and honor download cancellation and timeouts.
+- Stage local imports before publication and protect publication with a lock.
+- Hide staging directories and confine local asset reads to the storage root.
 - Preserve imported signature assets when legacy empty signatures are enabled.
 - Invalidate Artifactory manifest cache entries after reimporting an extension.
 - Preserve upstream attribution and configure release publishing for this fork.
