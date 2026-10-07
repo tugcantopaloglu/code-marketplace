@@ -296,3 +296,13 @@ func TestYAMLConfig(t *testing.T) {
 		require.Error(t, invalid.Validate())
 	}
 }
+
+func TestCredentialPathThroughParentSymlink(t *testing.T) {
+	config := testConfig(t)
+	alias := filepath.Join(t.TempDir(), "storage-alias")
+	if err := os.Symlink(filepath.Dir(config.IncomingDir), alias); err != nil {
+		t.Skip("directory symlinks unavailable")
+	}
+	config.LDAP.BindPasswordFile = filepath.Join(alias, "incoming", "not-created-yet")
+	require.ErrorContains(t, config.Validate(), "outside package storage")
+}

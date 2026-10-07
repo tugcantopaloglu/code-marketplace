@@ -179,8 +179,19 @@ func (c *Config) Validate() error {
 func overlap(a, b string) bool {
 	resolve := func(value string) string {
 		value, _ = filepath.Abs(value)
-		if real, err := filepath.EvalSymlinks(value); err == nil {
-			value = real
+		ancestor := value
+		remaining := []string{}
+		for {
+			if real, err := filepath.EvalSymlinks(ancestor); err == nil {
+				value = filepath.Join(append([]string{real}, remaining...)...)
+				break
+			}
+			parent := filepath.Dir(ancestor)
+			if parent == ancestor {
+				break
+			}
+			remaining = append([]string{filepath.Base(ancestor)}, remaining...)
+			ancestor = parent
 		}
 		return strings.ToLower(filepath.Clean(value))
 	}
