@@ -1,0 +1,50 @@
+name: build
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # For creating releases.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+
+      - name: Get Go cache paths
+        id: go-cache-paths
+        shell: bash
+        run: |
+          echo "go-build=$(go env GOCACHE)" >> $GITHUB_OUTPUT
+          echo "go-mod=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
+
+      - name: Go build cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-build }}
+          key: ${{ runner.os }}-release-go-build-${{ hashFiles('**/go.sum') }}
+
+      - name: Go mod cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-mod }}
+          key: ${{ runner.os }}-release-go-mod-${{ hashFiles('**/go.sum') }}
+
+      - run: make build
+
+      - name: Generate checksums
+        run: |
+          cd bin
+          sha256sum * > code-marketplace_${{ github.ref_name }}_checksums.txt
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          files: ./bin/*

@@ -1,0 +1,110 @@
+name: security
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    # Run every day at 10:00 UTC (6:00 AM ET / 3:00 AM PT)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel in-progress runs for pull requests when developers push
+# additional changes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: "go.mod"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: go
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "/language:go"
+
+  trivy:
+    name: Trivy Docker Image Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: "go.mod"
+
+      - name: Build binary for linux/amd64
+        run: make bin/code-marketplace-linux-amd64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Build Docker image
+        id: build
+        run: |
+          docker buildx bake \
+            -f ./docker-bake.hcl \
+            --set "*.platform=linux/amd64" \
+            --set "*.tags=code-marketplace:scan" \
+            --load
+          echo "image=code-marketplace:scan" >> "$GITHUB_OUTPUT"
+
+      - name: Run Trivy vulnerability scanner (table output for logs)
+        uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6 # v0.34.2
+        with:
+          image-ref: ${{ steps.build.outputs.image }}
+          format: "table"
+          severity: "LOW,MEDIUM,HIGH,CRITICAL"
+
+      - name: Run Trivy vulnerability scanner (SARIF output for GitHub)
+        uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6 # v0.34.2
+        with:
+          image-ref: ${{ steps.build.outputs.image }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "LOW,MEDIUM,HIGH,CRITICAL"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: "trivy-results.sarif"
+          category: "Trivy"
+
+      - name: Upload Trivy scan results as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          retention-days: 7

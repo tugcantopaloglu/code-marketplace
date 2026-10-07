@@ -1,0 +1,36 @@
+name: lint/go
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.sum"
+      - ".github/workflows/lint.yaml"
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.sum"
+      - ".github/workflows/lint.yaml"
+  workflow_dispatch:
+
+# Cancel in-progress runs for pull requests when developers push
+# additional changes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9.2.1
+        with:
+          version: v2.11.4
