@@ -40,7 +40,7 @@ func openProcessed(path, incoming, published string, input, output *os.Root) (*o
 				resolved = filepath.Join(resolved, suffix[i])
 			}
 			if overlaps(resolved, incoming) || overlaps(resolved, published) {
-				return nil, fmt.Errorf("processed storage overlaps incoming or published storage")
+				return nil, fmt.Errorf("processed, incoming, and published storage must be separate directories")
 			}
 			break
 		}
@@ -58,7 +58,7 @@ func openProcessed(path, incoming, published string, input, output *os.Root) (*o
 		return nil, err
 	}
 	if overlaps(path, incoming) || overlaps(path, published) {
-		return nil, fmt.Errorf("processed storage overlaps incoming or published storage")
+		return nil, fmt.Errorf("processed, incoming, and published storage must be separate directories")
 	}
 	root, err := os.OpenRoot(path)
 	if err != nil {
