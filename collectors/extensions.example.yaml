@@ -1,0 +1,8 @@
+targetPlatform: win32-x64
+publisherMode: verified
+allowedPublishers: []
+extensions:
+  - id: ms-vscode.notepadplusplus-keybindings
+    version: 1.0.7
+  - id: ms-python.python
+  - id: golang.Go

@@ -206,7 +206,8 @@ additional exact publisher-name or GUID allowlist, choose explicit `allowlist`
 mode, or disable publisher restrictions with `any` mode. A connected collector
 produces signed `.publisher.json` records bound to the exact VSIX and signature
 bytes. The importer verifies them offline. See [PUBLISHERS.md](PUBLISHERS.md)
-for collection, trust configuration, and policy modes.
+for collection, trust configuration, and policy modes. Use `collect-batch` with a
+YAML extension list for bulk collection on a connected host.
 
 See [SANDBOX.md](SANDBOX.md) for the signed report contract, THOR integration
 boundary, public-key trust configuration, and legacy import migration.

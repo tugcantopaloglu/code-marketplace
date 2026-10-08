@@ -70,6 +70,66 @@ the matching `.sandbox.json`. All sidecars use the VSIX basename. An arbitrary
 VSIX cannot prove its publisher by its manifest name alone; the provenance must
 match both its original bytes and its signature archive.
 
+## Batch collection
+
+Select extensions in [collectors/extensions.example.yaml](collectors/extensions.example.yaml):
+
+```yaml
+targetPlatform: win32-x64
+publisherMode: verified
+allowedPublishers: []
+extensions:
+  - id: ms-vscode.notepadplusplus-keybindings
+    version: 1.0.7
+  - id: ms-python.python
+  - id: golang.Go
+    targetPlatform: linux-x64
+```
+
+Run on the trusted internet-connected collector. Reuse its existing key and key
+ID; creating a new key for every batch requires updating importer trust each time.
+The cluster can keep its existing image; only the connected collector needs a
+binary with `collect-batch` support.
+
+```console
+code-marketplace collect-batch --config ./extensions.yaml --output-dir ./collected-20261008 --key-id collector-2026 --signing-key ./collector-keys/collector-private.pem --valid-for 168h
+```
+
+The output directory must be empty. Downloads run sequentially with three attempts
+per extension; `--attempts` accepts 1 to 5. An error does not stop the remaining
+selections. Failed batches return a nonzero exit status and preserve successful
+packages. `batch-report.json` records every selection, result, resolved version,
+platform, hashes, and provenance expiry. Review it before transfer. Identical
+universal packages selected for several platforms share one bundle and have a
+`reused` result. A different package with the same filename is rejected.
+
+The flat `incoming` output contains matching `.vsix`, `.sigzip`, and
+`.publisher.json` files. Transfer only those files to the offline incoming share,
+with sidecars first and each VSIX staged as `.part` before renaming it last.
+Keep the batch report, private key, and publisher policy outside the share.
+The collector does not produce `.sandbox.json`; authenticated clean scan reports
+remain required for publication. The default seven-day provenance window applies
+to every package separately. Import before expiry or collect fresh provenance.
+
+`publisherMode` defaults to `verified` and accepts the same three modes as the
+importer. `allowedPublishers` accepts exact publisher names or `id:GUID` entries.
+The collector filters the output; the offline importer still enforces its own
+policy. An omitted version selects the latest stable package. Set `preRelease:
+true` on an entry to include previews. A per-entry `targetPlatform` overrides the
+global platform. Platform selection refers to the editor, not the collector host.
+Dependencies and extension-pack members must also be listed when needed offline.
+
+To start a YAML list from extensions installed in an internet-connected VS Code:
+
+```bash
+printf 'targetPlatform: win32-x64\npublisherMode: verified\nextensions:\n' > extensions.yaml
+code --list-extensions | sed 's/^/  - id: /' >> extensions.yaml
+```
+
+Review the generated selection. This export selects the latest stable releases;
+set `version` explicitly where a pinned release is required. For a failed batch,
+create a selection with its failed entries and collect into a new empty directory.
+
 ## Publisher report
 
 The envelope uses `keyId`, Base64 `payload`, and Base64 Ed25519 `signature`, as in
