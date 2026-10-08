@@ -21,6 +21,7 @@ type Config struct {
 	ExtensionsDir string          `yaml:"extensionsDir"`
 	IncomingDir   string          `yaml:"incomingDir,omitempty"`
 	AuditFile     string          `yaml:"auditFile"`
+	SandboxMode   string          `yaml:"sandboxMode"`
 	LDAP          LDAPConfig      `yaml:"ldap"`
 	Session       SessionConfig   `yaml:"session"`
 	Publisher     PublisherConfig `yaml:"publisher"`
@@ -116,6 +117,12 @@ func validateYAML(node *yaml.Node) error {
 }
 
 func (c *Config) Validate() error {
+	if c.SandboxMode == "" {
+		c.SandboxMode = "required"
+	}
+	if c.SandboxMode != "required" && c.SandboxMode != "disabled" {
+		return fmt.Errorf("sandboxMode must be required or disabled")
+	}
 	public, err := url.Parse(c.PublicURL)
 	if err != nil || public.Scheme != "https" || public.Host == "" || public.User != nil || public.RawQuery != "" || public.Fragment != "" || public.Opaque != "" || (public.Path != "" && public.Path != "/") {
 		return fmt.Errorf("publicURL must be an HTTPS origin without a path")

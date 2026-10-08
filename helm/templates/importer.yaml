@@ -5,6 +5,9 @@
 {{- if not (has .Values.importer.publisherPolicy.mode (list "verified" "allowlist" "any")) }}
 {{- fail "importer.publisherPolicy.mode must be verified, allowlist, or any" }}
 {{- end }}
+{{- if not (has .Values.importer.sandboxMode (list "required" "disabled")) }}
+{{- fail "importer.sandboxMode must be required or disabled" }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -49,10 +52,14 @@ spec:
                 - /incoming
                 - --extensions-dir
                 - /extensions
+                - --sandbox-mode
+                - {{ .Values.importer.sandboxMode | quote }}
+                {{- if eq .Values.importer.sandboxMode "required" }}
                 - --sandbox-trust
                 - /sandbox-trust/trust.json
                 - --sandbox-max-age
                 - {{ .Values.importer.sandboxMaxAge | quote }}
+                {{- end }}
                 - --publisher-mode
                 - {{ .Values.importer.publisherPolicy.mode | quote }}
                 - --publisher-max-age
@@ -75,9 +82,11 @@ spec:
                   {{- with .Values.persistence.subPath }}
                   subPath: {{ . | quote }}
                   {{- end }}
+                {{- if eq .Values.importer.sandboxMode "required" }}
                 - name: sandbox-trust
                   mountPath: /sandbox-trust
                   readOnly: true
+                {{- end }}
                 {{- if ne .Values.importer.publisherPolicy.mode "any" }}
                 - name: publisher-policy
                   mountPath: /publisher-policy
@@ -90,12 +99,14 @@ spec:
             - name: published
               persistentVolumeClaim:
                 claimName: {{ .Values.persistence.existingClaim | default (include "code-marketplace.fullname" .) }}
+            {{- if eq .Values.importer.sandboxMode "required" }}
             - name: sandbox-trust
               configMap:
                 name: {{ required "importer.sandboxTrust.configMap is required" .Values.importer.sandboxTrust.configMap }}
                 items:
                   - key: {{ .Values.importer.sandboxTrust.key | quote }}
                     path: trust.json
+            {{- end }}
             {{- if ne .Values.importer.publisherPolicy.mode "any" }}
             - name: publisher-policy
               configMap:

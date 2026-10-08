@@ -1,0 +1,11 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const [output, keyId] = process.argv.slice(2);
+if (!output || !keyId || !/^[a-zA-Z0-9._-]{1,128}$/.test(keyId)) throw new Error('Usage: OUTPUT_DIRECTORY KEY_ID');
+fs.mkdirSync(output, { recursive: true, mode: 0o700 });
+const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+fs.writeFileSync(path.join(output, 'sandbox-private.pem'), privateKey.export({ format: 'pem', type: 'pkcs8' }), { flag: 'wx', mode: 0o600 });
+const rawPublic = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+fs.writeFileSync(path.join(output, 'sandbox-trust.json'), JSON.stringify({ keys: { [keyId]: rawPublic.toString('base64') } }, null, 2), { flag: 'wx', mode: 0o600 });
+process.stdout.write('Sandbox private key and public trust created. Keep the private key on the trusted scanner adapter host. This does not produce scan approval.\n');

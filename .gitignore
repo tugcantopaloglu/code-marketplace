@@ -4,4 +4,5 @@ coverage
 extensions
 .idea
 collector-private.pem
+sandbox-private.pem
 offline-output

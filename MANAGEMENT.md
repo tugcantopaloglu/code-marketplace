@@ -58,6 +58,12 @@ The Graphite Mono interface shows the catalog, admission policy, and latest impo
 results. It uses local monospace fonts, graphite surfaces, and monochrome tables;
 no external fonts or UI assets are fetched. Search and refresh only read metadata.
 
+Standalone `sandboxMode` defaults to `required`; set it to the importer's actual
+mode when temporarily using `disabled`. Helm uses `importer.sandboxMode` for both
+processes. Catalog rows use each receipt's recorded scan status, so an unscanned
+package is never labelled as sandbox approved. Changing the display configuration
+does not change the importer's policy.
+
 Upload and version-revocation endpoints are removed, including for members of
 adminGroups. There is no YAML flag that enables those endpoints. New extensions
 continue to arrive through the existing share/scanner/importer workflow. The UI

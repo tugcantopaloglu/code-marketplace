@@ -31,6 +31,7 @@ jobs:
       - run: helm lint --strict ./helm
       - run: helm lint --strict ./helm -f ./helm/values-offline.yaml
       - run: helm lint --strict ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml
+      - run: helm lint --strict ./helm -f ./helm/values-offline.yaml --set importer.sandboxMode=disabled --set importer.sandboxTrust.configMap=
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -39,4 +40,6 @@ jobs:
           helm template marketplace ./helm -f ./helm/values-offline.yaml --set tests.enabled=true > /tmp/marketplace-offline.yaml
           helm template marketplace ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml > /tmp/marketplace-admin.yaml
           helm template marketplace ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml --set importer.enabled=false > /tmp/marketplace-admin-only.yaml
-          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0 -strict -summary -kubernetes-version 1.31.0 /tmp/marketplace-default.yaml /tmp/marketplace-offline.yaml /tmp/marketplace-admin.yaml /tmp/marketplace-admin-only.yaml
+          helm template marketplace ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml --set importer.sandboxMode=disabled --set importer.sandboxTrust.configMap= > /tmp/marketplace-sandbox-disabled.yaml
+          ! grep -q 'name: sandbox-trust' /tmp/marketplace-sandbox-disabled.yaml
+          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0 -strict -summary -kubernetes-version 1.31.0 /tmp/marketplace-default.yaml /tmp/marketplace-offline.yaml /tmp/marketplace-admin.yaml /tmp/marketplace-admin-only.yaml /tmp/marketplace-sandbox-disabled.yaml

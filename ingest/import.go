@@ -27,7 +27,8 @@ type Receipt struct {
 	SHA256        string              `json:"sha256"`
 	SignatureHash string              `json:"signatureSha256"`
 	ImportedAt    time.Time           `json:"importedAt"`
-	Approval      sandbox.Approval    `json:"sandbox"`
+	SandboxMode   string              `json:"sandboxMode,omitempty"`
+	Approval      *sandbox.Approval   `json:"sandbox,omitempty"`
 	Publisher     *publisher.Approval `json:"publisher,omitempty"`
 }
 
@@ -36,6 +37,7 @@ type Result struct {
 	Extension           string              `json:"extension,omitempty"`
 	SHA256              string              `json:"sha256,omitempty"`
 	Status              string              `json:"status"`
+	SandboxMode         string              `json:"sandboxMode"`
 	Reason              string              `json:"reason,omitempty"`
 	Dependencies        []string            `json:"dependencies,omitempty"`
 	MissingDependencies []string            `json:"missingDependencies,omitempty"`
@@ -51,13 +53,23 @@ type Options struct {
 	Incoming        string
 	Storage         string
 	Policy          *sandbox.Policy
+	SandboxMode     string
 	PublisherPolicy *publisher.Policy
 	Logger          slog.Logger
 }
 
 func Run(ctx context.Context, options Options) (*Summary, error) {
-	if options.Policy == nil || len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0 {
+	if options.SandboxMode == "" {
+		options.SandboxMode = "required"
+	}
+	if options.SandboxMode != "required" && options.SandboxMode != "disabled" {
+		return nil, fmt.Errorf("sandbox mode must be required or disabled")
+	}
+	if options.SandboxMode == "required" && (options.Policy == nil || len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0) {
 		return nil, fmt.Errorf("trusted sandbox approval is mandatory for scheduled imports")
+	}
+	if options.SandboxMode == "disabled" && options.Policy != nil {
+		return nil, fmt.Errorf("sandbox policy must be omitted in disabled mode")
 	}
 	if options.PublisherPolicy == nil {
 		return nil, fmt.Errorf("publisher policy is mandatory; explicitly select any to disable publisher restrictions")
@@ -130,7 +142,7 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".vsix") {
 			continue
 		}
-		result := importPackage(ctx, input, output, store, options.Policy, options.PublisherPolicy, entry.Name())
+		result := importPackage(ctx, input, output, store, options.Policy, options.PublisherPolicy, options.SandboxMode, entry.Name())
 		summary.Results = append(summary.Results, result)
 		failed = failed || result.Status == "failed" || result.Status == "conflict"
 	}
@@ -166,8 +178,8 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 	return summary, nil
 }
 
-func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, policy *sandbox.Policy, publisherPolicy *publisher.Policy, name string) Result {
-	result := Result{File: name, Status: "rejected"}
+func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, policy *sandbox.Policy, publisherPolicy *publisher.Policy, sandboxMode, name string) Result {
+	result := Result{File: name, Status: "rejected", SandboxMode: sandboxMode}
 	vsix, err := read(input, name, storage.MaxPackageSize)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
@@ -205,18 +217,22 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	if err != nil {
 		return readFailure(result, err)
 	}
-	report, err := read(input, base+".sandbox.json", sandbox.MaxReportSize)
-	if err != nil {
-		return readFailure(result, err)
-	}
 	if err := extensionsign.ValidateSignatureArchive(vsix, signature); err != nil {
 		result.Reason = err.Error()
 		return result
 	}
-	approval, err := policy.Verify(report, vsix, time.Now().UTC())
-	if err != nil {
-		result.Reason = err.Error()
-		return result
+	var report []byte
+	var approval *sandbox.Approval
+	if sandboxMode == "required" {
+		report, err = read(input, base+".sandbox.json", sandbox.MaxReportSize)
+		if err != nil {
+			return readFailure(result, err)
+		}
+		approval, err = policy.Verify(report, vsix, time.Now().UTC())
+		if err != nil {
+			result.Reason = err.Error()
+			return result
+		}
 	}
 	if err := storage.ValidatePackage(manifest, vsix); err != nil {
 		result.Reason = err.Error()
@@ -252,13 +268,33 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 			result.Status, result.Reason = "conflict", "published files do not match their import receipt"
 			return result
 		}
+		if sandboxMode == "required" && (receipt.SandboxMode == "disabled" || receipt.Approval == nil) {
+			receipt.SandboxMode, receipt.Approval = "required", approval
+			data, err := json.Marshal(receipt)
+			var versionRoot *os.Root
+			if err == nil {
+				versionRoot, err = output.OpenRoot(target)
+			}
+			if err == nil {
+				err = storage.WritePrivateFile(versionRoot, ".sandbox-report.json", report)
+				if err == nil {
+					err = storage.WritePrivateFile(versionRoot, ReceiptName, data)
+				}
+				versionRoot.Close()
+			}
+			if err != nil {
+				result.Status, result.Reason = "failed", err.Error()
+				return result
+			}
+			result.Reason = "existing package now has authenticated sandbox approval"
+		}
 		result.Status = "unchanged"
 		return result
 	} else if !errors.Is(err, os.ErrNotExist) {
 		result.Status, result.Reason = "failed", err.Error()
 		return result
 	}
-	receipt := Receipt{SchemaVersion: 1, SHA256: result.SHA256, SignatureHash: hash(signature), ImportedAt: time.Now().UTC(), Approval: *approval, Publisher: result.Publisher}
+	receipt := Receipt{SchemaVersion: 1, SHA256: result.SHA256, SignatureHash: hash(signature), ImportedAt: time.Now().UTC(), SandboxMode: sandboxMode, Approval: approval, Publisher: result.Publisher}
 	data, err := json.Marshal(receipt)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
@@ -267,7 +303,9 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	files := []storage.File{
 		{RelativePath: storage.SignatureArchiveFilename(manifest), Content: signature},
 		{RelativePath: ReceiptName, Content: data},
-		{RelativePath: ".sandbox-report.json", Content: report},
+	}
+	if approval != nil {
+		files = append(files, storage.File{RelativePath: ".sandbox-report.json", Content: report})
 	}
 	if result.Publisher != nil {
 		files = append(files, storage.File{RelativePath: ".publisher-report.json", Content: publisherReport})

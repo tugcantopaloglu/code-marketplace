@@ -143,6 +143,7 @@ server:
 
 importer:
   enabled: false
+  sandboxMode: required
   schedule: "*/5 * * * *"
   sandboxMaxAge: 24h
   activeDeadlineSeconds: 600

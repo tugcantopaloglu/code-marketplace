@@ -2,6 +2,7 @@ address: 127.0.0.1:8081
 publicURL: https://marketplace-admin.internal
 extensionsDir: /extensions
 auditFile: /audit/admin.jsonl
+sandboxMode: required
 ldap:
   url: ldaps://dc01.internal:636
   caFile: /ad-ca/ldap-ca.pem

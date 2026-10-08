@@ -14,23 +14,36 @@ import (
 func importCommand() *cobra.Command {
 	var incoming, destination, trust string
 	var maxAge time.Duration
+	var sandboxMode string
 	var publisherMode, publisherPolicyPath string
 	var publisherMaxAge time.Duration
 	cmd := &cobra.Command{
-		Use: "import", Short: "Import signed local packages with authenticated sandbox approval",
+		Use: "import", Short: "Import signed local packages with configured admission policies",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if incoming == "" || destination == "" || trust == "" {
-				return fmt.Errorf("--incoming-dir, --extensions-dir, and --sandbox-trust are required")
+			if incoming == "" || destination == "" {
+				return fmt.Errorf("--incoming-dir and --extensions-dir are required")
 			}
-			policy, err := sandbox.LoadPolicy(trust, maxAge)
-			if err != nil {
-				return err
+			if sandboxMode != "required" && sandboxMode != "disabled" {
+				return fmt.Errorf("--sandbox-mode must be required or disabled")
+			}
+			var policy *sandbox.Policy
+			if sandboxMode == "required" {
+				if trust == "" {
+					return fmt.Errorf("--sandbox-trust is required in required sandbox mode")
+				}
+				var err error
+				policy, err = sandbox.LoadPolicy(trust, maxAge)
+				if err != nil {
+					return err
+				}
+			} else if trust != "" {
+				return fmt.Errorf("--sandbox-trust must be omitted in disabled sandbox mode")
 			}
 			publisherPolicy, err := publisher.LoadPolicy(publisherPolicyPath, publisherMode, publisherMaxAge)
 			if err != nil {
 				return err
 			}
-			summary, err := ingest.Run(cmd.Context(), ingest.Options{Incoming: incoming, Storage: destination, Policy: policy, PublisherPolicy: publisherPolicy, Logger: cmdLogger(cmd)})
+			summary, err := ingest.Run(cmd.Context(), ingest.Options{Incoming: incoming, Storage: destination, SandboxMode: sandboxMode, Policy: policy, PublisherPolicy: publisherPolicy, Logger: cmdLogger(cmd)})
 			if summary != nil {
 				if writeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(summary); writeErr != nil {
 					return writeErr
@@ -42,6 +55,7 @@ func importCommand() *cobra.Command {
 	cmd.Flags().StringVar(&incoming, "incoming-dir", "", "Share directory containing VSIX, signature, and sandbox report files.")
 	cmd.Flags().StringVar(&destination, "extensions-dir", "", "Published local extension storage.")
 	cmd.Flags().StringVar(&trust, "sandbox-trust", "", "Trusted sandbox public keys JSON file.")
+	cmd.Flags().StringVar(&sandboxMode, "sandbox-mode", "required", "Sandbox admission: required, or explicitly disabled for temporary operation.")
 	cmd.Flags().DurationVar(&maxAge, "sandbox-max-age", 24*time.Hour, "Maximum sandbox report age and validity interval.")
 	cmd.Flags().StringVar(&publisherMode, "publisher-mode", "verified", "Publisher restriction: verified, allowlist, or any. Verified mode also applies a configured allowlist.")
 	cmd.Flags().StringVar(&publisherPolicyPath, "publisher-policy", "", "Trusted publisher collector keys and allowed publisher names JSON file.")

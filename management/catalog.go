@@ -100,5 +100,5 @@ func (s *Server) policy(w http.ResponseWriter, _ *http.Request, _ session) {
 		allowed = append(allowed, name)
 	}
 	sort.Strings(allowed)
-	writeJSON(w, http.StatusOK, map[string]any{"mode": policy.Mode, "allowedPublishers": allowed, "maxAge": s.config.Publisher.MaxAge.String(), "signatureRequired": true, "sandboxRequired": true})
+	writeJSON(w, http.StatusOK, map[string]any{"mode": policy.Mode, "allowedPublishers": allowed, "maxAge": s.config.Publisher.MaxAge.String(), "signatureRequired": true, "sandboxRequired": s.config.SandboxMode != "disabled"})
 }

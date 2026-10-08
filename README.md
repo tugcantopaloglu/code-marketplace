@@ -209,6 +209,11 @@ bytes. The importer verifies them offline. See [PUBLISHERS.md](PUBLISHERS.md)
 for collection, trust configuration, and policy modes. Use `collect-batch` with a
 YAML extension list for bulk collection on a connected host.
 
+Sandbox approval defaults to required. Temporary `--sandbox-mode disabled`
+operation needs no sandbox trust or scan report and records the disabled check
+in import receipts. Signature and publisher admission still apply. See
+[SANDBOX.md](SANDBOX.md) for configuration and enabling scanning later.
+
 See [SANDBOX.md](SANDBOX.md) for the signed report contract, THOR integration
 boundary, public-key trust configuration, and legacy import migration.
 See [helm/README.md](helm/README.md) for the offline Kubernetes deployment.

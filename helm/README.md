@@ -54,7 +54,11 @@ Create `marketplace-publisher-policy` from the connected collector's public
 `publisher-policy.json`, then configure its exact publisher-name or GUID
 allowlist. Set `mode: allowlist` to accept allowlisted publishers without requiring
 the badge, or explicitly set `mode: any` to disable publisher restrictions.
-Sandbox and VSIX signature checks remain required. The collector's private key
+VSIX signature checks remain required. Sandbox admission defaults to
+`importer.sandboxMode: required`. To temporarily operate without a scanner, set
+`importer.sandboxMode: disabled`; the chart omits the sandbox trust volume and its
+arguments. Verified Publisher admission and its allowlist continue to apply.
+The collector's private key
 stays on the connected host. See [PUBLISHERS.md](../PUBLISHERS.md).
 
 The importer produces JSON logs with per-file decisions. Missing sidecars wait;

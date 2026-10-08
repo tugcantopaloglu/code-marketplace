@@ -40,6 +40,34 @@ unknown keys, invalid signatures, duplicate or unknown JSON fields, pending or
 non-clean results, hash mismatches, future dates, and expired reports are rejected.
 The default maximum report age and validity interval are both 24 hours.
 
+## Temporary operation without sandbox approval
+
+Sandbox admission defaults to `required`. Explicitly select `disabled` while the
+scanner integration is being prepared:
+
+```console
+code-marketplace import --incoming-dir ./incoming --extensions-dir ./published --sandbox-mode disabled --publisher-policy ./publisher-policy.json
+```
+
+Omit `--sandbox-trust` in this mode. No sandbox trust ConfigMap, scanner key, or
+`.sandbox.json` is needed. Verified Publisher provenance, the configured publisher
+allowlist, matching original `.sigzip`, package validation, immutable versions,
+and file locking continue to apply. This mode does not perform a malware scan.
+Receipts and per-file results record `sandboxMode: disabled` without inventing
+a clean verdict or writing a sandbox report. Management displays that status.
+
+For Helm, set `importer.sandboxMode: disabled`; the chart omits the sandbox volume
+and trust arguments. The default remains `required`. For manual CronJobs, pass
+`--sandbox-mode disabled` and remove the sandbox volume and its mount. The image
+must support this flag. An existing image with mandatory sandbox admission cannot
+be changed into this mode by removing its trust argument alone.
+
+To enable scanning later, restore `required` and deploy real scanner public keys
+and authenticated reports. Previously published packages stay available. When
+the same bytes are reimported with genuine clean approval, the importer adds
+the sandbox record without replacing the VSIX or signature. Missing reports
+still wait; malicious or invalid reports never upgrade an existing receipt.
+
 ## Trust configuration
 
 Deploy public keys separately from the incoming share:
@@ -56,6 +84,42 @@ The private key stays in the sandbox or its trusted adapter. People who can
 upload packages must not be able to modify the trusted public-key configuration,
 write the published marketplace storage, or obtain the sandbox's signing key.
 Rotate keys by deploying a new public key before switching the scanner key ID.
+
+Prepare a dedicated signing key on the trusted scanner adapter host with Node.js:
+
+```console
+node scripts/create-sandbox-key.cjs ./sandbox-keys thor-2026
+```
+
+This creates `sandbox-private.pem` and public `sandbox-trust.json`. The future
+THOR adapter uses this private key and `keyId: thor-2026` to sign authenticated
+scan results. Key generation does not perform a scan or create a clean verdict.
+Keep this key separate from the collector key. Only the public JSON leaves the
+adapter host. The adapter itself still needs a native THOR report and version
+before its result mapping can be implemented.
+
+On an offline cluster operator host, keep public configuration files in a
+protected directory outside the incoming share. For the manual deployment, the
+ConfigMap data keys and mounts are:
+
+| Local file | ConfigMap in `code-marketplace` | Importer mount |
+| --- | --- | --- |
+| `sandbox-trust.json` | `marketplace-sandbox-trust` | `/sandbox-trust/sandbox-trust.json` |
+| `publisher-policy.json` | `marketplace-publisher-policy` | `/publisher-policy/publisher-policy.json` |
+
+Merge trusted keys into existing files when rotating or adding hosts; preserve
+the publisher allowlist. To create or update these two ConfigMaps:
+
+```bash
+set -o pipefail
+kubectl -n code-marketplace create configmap marketplace-sandbox-trust --from-file=sandbox-trust.json=./sandbox-trust.json --dry-run=client -o yaml | kubectl -n code-marketplace apply -f -
+kubectl -n code-marketplace create configmap marketplace-publisher-policy --from-file=publisher-policy.json=./publisher-policy.json --dry-run=client -o yaml | kubectl -n code-marketplace apply -f -
+```
+
+Never store a private key in these ConfigMaps. The scheduler uses the current
+mounted public files; no image rebuild is required. Missing ConfigMaps prevent
+the pod from mounting its volumes. Invalid public-key values fail importer
+startup. Valid trust with a missing `.sandbox.json` leaves that package `waiting`.
 
 ```console
 code-marketplace add ./incoming --extensions-dir ./extensions --require-signature --require-sandbox-report --sandbox-trust ./sandbox-trust.json
@@ -92,8 +156,8 @@ scanner; successful process exit alone is not a clean-file verdict.
 code-marketplace import --incoming-dir ./incoming --extensions-dir ./published --sandbox-trust ./sandbox-trust.json --publisher-policy ./publisher-policy.json
 ```
 
-This command always requires both authenticated sandbox approval and a matching
-`.sigzip`. It reads the incoming share without modifying or deleting inputs.
+This command defaults to authenticated sandbox approval and always requires a
+matching `.sigzip`. It reads the incoming share without modifying or deleting inputs.
 JSON results distinguish `imported`, `unchanged`, `waiting`, `rejected`,
 `conflict`, and `failed`. Missing sidecars remain `waiting`. Rejections are
 expected policy decisions; infrastructure failures and version conflicts cause

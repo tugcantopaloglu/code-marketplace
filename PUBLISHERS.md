@@ -2,8 +2,9 @@
 
 Verified Publisher is the official Marketplace domain verification badge. It is
 separate from the Microsoft signature on a VSIX and is not a malware scan.
-Sandbox approval and a matching `.sigzip` remain mandatory in every publisher
-mode. See the official
+A matching `.sigzip` remains mandatory in every publisher mode. Sandbox approval
+is required by default and can be explicitly disabled temporarily in the importer.
+See [SANDBOX.md](SANDBOX.md) and the official
 [verification documentation](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#verify-a-publisher).
 
 ## Policy
@@ -14,7 +15,7 @@ mode. See the official
 | --- | --- |
 | `verified` | Authenticated Marketplace provenance with a verified domain; also apply the allowlist when nonempty. |
 | `allowlist` | Authenticated provenance from an allowlisted publisher; the badge is optional. |
-| `any` | Explicitly disable publisher restrictions; sandbox and signature checks still apply. |
+| `any` | Explicitly disable publisher restrictions; signature and configured sandbox checks still apply. |
 
 Unknown modes fail. Missing provenance waits. Forged signatures, expired
 observations, mismatched identities or hashes, and ineligible publishers are
@@ -108,7 +109,7 @@ The flat `incoming` output contains matching `.vsix`, `.sigzip`, and
 with sidecars first and each VSIX staged as `.part` before renaming it last.
 Keep the batch report, private key, and publisher policy outside the share.
 The collector does not produce `.sandbox.json`; authenticated clean scan reports
-remain required for publication. The default seven-day provenance window applies
+are required when sandbox mode is `required`. The default seven-day provenance window applies
 to every package separately. Import before expiry or collect fresh provenance.
 
 `publisherMode` defaults to `verified` and accepts the same three modes as the
