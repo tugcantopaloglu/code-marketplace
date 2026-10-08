@@ -214,6 +214,11 @@ operation needs no sandbox trust or scan report and records the disabled check
 in import receipts. Signature and publisher admission still apply. See
 [SANDBOX.md](SANDBOX.md) for configuration and enabling scanning later.
 
+Use `--processed-dir` to archive successfully published bundles and
+`--write-incoming-report` to update `incoming/import-report.json` with progress,
+per-file decisions, archive paths, and failures. Both are optional and require
+incoming write access. Rejected and waiting packages stay in incoming.
+
 See [SANDBOX.md](SANDBOX.md) for the signed report contract, THOR integration
 boundary, public-key trust configuration, and legacy import migration.
 See [helm/README.md](helm/README.md) for the offline Kubernetes deployment.

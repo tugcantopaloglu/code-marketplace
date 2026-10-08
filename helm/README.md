@@ -66,6 +66,22 @@ policy rejections do not stop other packages. Infrastructure failures and
 conflicting existing versions make the Job fail. `concurrencyPolicy: Forbid`
 prevents overlap for this CronJob; a native shared lock also guards the storage.
 
+Enable `importer.processed.enabled` to archive successful bundles and
+`importer.writeIncomingReport` for `incoming/import-report.json`. Both default to
+false. Either feature makes the incoming mount writable. The processed mount
+uses `importer.processed.existingClaim`, defaulting to the incoming claim, and
+requires a separate `subPath` (default `processed`) created by the operator.
+The server's published mount remains read-only. See [SANDBOX.md](../SANDBOX.md)
+for report fields, bundle layout, and interrupted-archive recovery.
+
+```yaml
+importer:
+  writeIncomingReport: true
+  processed:
+    enabled: true
+    subPath: processed
+```
+
 ## HTTPS and network access
 
 Expose the root of a hostname over HTTPS with a certificate trusted by VS Code

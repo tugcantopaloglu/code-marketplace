@@ -144,6 +144,11 @@ server:
 importer:
   enabled: false
   sandboxMode: required
+  writeIncomingReport: false
+  processed:
+    enabled: false
+    existingClaim: ""
+    subPath: processed
   schedule: "*/5 * * * *"
   sandboxMaxAge: 24h
   activeDeadlineSeconds: 600

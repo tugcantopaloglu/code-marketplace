@@ -18,6 +18,7 @@ import (
 	"github.com/coder/code-marketplace/publisher"
 	"github.com/coder/code-marketplace/sandbox"
 	"github.com/coder/code-marketplace/storage"
+	"github.com/google/uuid"
 )
 
 const ReceiptName = ".import-receipt.json"
@@ -42,23 +43,42 @@ type Result struct {
 	Dependencies        []string            `json:"dependencies,omitempty"`
 	MissingDependencies []string            `json:"missingDependencies,omitempty"`
 	Publisher           *publisher.Approval `json:"publisher,omitempty"`
+	ArchiveStatus       string              `json:"archiveStatus,omitempty"`
+	ArchivedTo          string              `json:"archivedTo,omitempty"`
+	ArchiveError        string              `json:"archiveError,omitempty"`
+	RecoveryDir         string              `json:"recoveryDir,omitempty"`
+	sourceHashes        map[string]string
 }
 
 type Summary struct {
-	CompletedAt time.Time `json:"completedAt"`
-	Results     []Result  `json:"results"`
+	StartedAt    time.Time `json:"startedAt"`
+	CompletedAt  time.Time `json:"completedAt,omitzero"`
+	Status       string    `json:"status"`
+	Error        string    `json:"error,omitempty"`
+	Results      []Result  `json:"results"`
+	RecoveryDirs []string  `json:"recoveryDirs,omitempty"`
 }
 
 type Options struct {
-	Incoming        string
-	Storage         string
-	Policy          *sandbox.Policy
-	SandboxMode     string
-	PublisherPolicy *publisher.Policy
-	Logger          slog.Logger
+	Incoming            string
+	Storage             string
+	Policy              *sandbox.Policy
+	SandboxMode         string
+	PublisherPolicy     *publisher.Policy
+	Logger              slog.Logger
+	Processed           string
+	WriteIncomingReport bool
 }
 
-func Run(ctx context.Context, options Options) (*Summary, error) {
+func Run(ctx context.Context, options Options) (summary *Summary, runErr error) {
+	started := time.Now().UTC()
+	defer func() {
+		if summary == nil && runErr != nil && options.WriteIncomingReport {
+			if err := WriteIncomingFailure(options.Incoming, options.Storage, started, runErr); err != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("write incoming failure report: %w", err))
+			}
+		}
+	}()
 	if options.SandboxMode == "" {
 		options.SandboxMode = "required"
 	}
@@ -125,26 +145,79 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 		return nil, fmt.Errorf("another import may be running; inspect .ingest.lock: %w", err)
 	}
 	defer release()
+	summary = &Summary{StartedAt: started, Status: "running", Results: []Result{}}
+	defer func() {
+		summary.CompletedAt = time.Now().UTC()
+		summary.Status = "completed"
+		if runErr != nil {
+			summary.Status, summary.Error = "failed", runErr.Error()
+		}
+		data, err := json.Marshal(summary)
+		if err == nil {
+			err = storage.WritePrivateFile(output, ".last-import.json", data)
+		}
+		if err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("persist import results: %w", err))
+			summary.Status, summary.Error = "failed", runErr.Error()
+		}
+		if options.WriteIncomingReport {
+			if err := writeIncomingSummary(input, summary); err != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("write incoming report: %w", err))
+				summary.Status, summary.Error = "failed", runErr.Error()
+			}
+		}
+	}()
+	if options.WriteIncomingReport {
+		if err := writeIncomingSummary(input, summary); err != nil {
+			return summary, err
+		}
+	}
+	var processed *os.Root
+	if options.Processed != "" {
+		processed, err = openProcessed(options.Processed, incoming, destination, input, output)
+		if err != nil {
+			return summary, err
+		}
+		defer processed.Close()
+	}
 	store, err := storage.NewStorage(ctx, &storage.Options{ExtDir: destination, Logger: options.Logger, Immutable: true})
 	if err != nil {
-		return nil, err
+		return summary, err
 	}
 	entries, err := os.ReadDir(incoming)
 	if err != nil {
-		return nil, err
+		return summary, err
 	}
-	summary := &Summary{Results: []Result{}}
 	var failed bool
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return summary, err
 		}
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".vsix") {
+			if entry.IsDir() && strings.HasPrefix(entry.Name(), ".archive-") {
+				if _, err := uuid.Parse(strings.TrimPrefix(entry.Name(), ".archive-")); err == nil {
+					summary.RecoveryDirs = append(summary.RecoveryDirs, entry.Name())
+					failed = true
+				}
+			}
 			continue
 		}
 		result := importPackage(ctx, input, output, store, options.Policy, options.PublisherPolicy, options.SandboxMode, entry.Name())
+		if processed != nil && (result.Status == "imported" || result.Status == "unchanged") {
+			result.ArchivedTo, result.RecoveryDir, err = archivePackage(ctx, input, processed, result)
+			result.ArchiveStatus = "archived"
+			if err != nil {
+				result.ArchiveStatus, result.ArchiveError = "failed", err.Error()
+				failed = true
+			}
+		}
 		summary.Results = append(summary.Results, result)
 		failed = failed || result.Status == "failed" || result.Status == "conflict"
+		if options.WriteIncomingReport {
+			if err := writeIncomingSummary(input, summary); err != nil {
+				return summary, err
+			}
+		}
 	}
 	available := map[string]bool{}
 	if err := store.WalkExtensions(ctx, func(manifest *storage.VSIXManifest, _ []storage.Version) error {
@@ -164,16 +237,8 @@ func Run(ctx context.Context, options Options) (*Summary, error) {
 			}
 		}
 	}
-	summary.CompletedAt = time.Now().UTC()
-	data, err := json.Marshal(summary)
-	if err != nil {
-		return summary, err
-	}
-	if err := storage.WritePrivateFile(output, ".last-import.json", data); err != nil {
-		return summary, fmt.Errorf("persist import results: %w", err)
-	}
 	if failed {
-		return summary, fmt.Errorf("one or more imports failed or conflicted; see JSON results")
+		return summary, fmt.Errorf("one or more imports or archive operations failed, conflicted, or require recovery; see JSON results")
 	}
 	return summary, nil
 }
@@ -186,6 +251,7 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		return result
 	}
 	result.SHA256 = hash(vsix)
+	result.sourceHashes = map[string]string{name: result.SHA256}
 	manifest, err := storage.ReadVSIXManifest(vsix)
 	if err != nil {
 		result.Reason = err.Error()
@@ -217,6 +283,7 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	if err != nil {
 		return readFailure(result, err)
 	}
+	result.sourceHashes[base+".sigzip"] = hash(signature)
 	if err := extensionsign.ValidateSignatureArchive(vsix, signature); err != nil {
 		result.Reason = err.Error()
 		return result
@@ -228,6 +295,7 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		if err != nil {
 			return readFailure(result, err)
 		}
+		result.sourceHashes[base+".sandbox.json"] = hash(report)
 		approval, err = policy.Verify(report, vsix, time.Now().UTC())
 		if err != nil {
 			result.Reason = err.Error()
@@ -244,6 +312,7 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		if err != nil {
 			return readFailure(result, err)
 		}
+		result.sourceHashes[base+".publisher.json"] = hash(publisherReport)
 	}
 	result.Publisher, err = publisherPolicy.Verify(publisherReport, vsix, signature, manifest, time.Now().UTC())
 	if err != nil {

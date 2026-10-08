@@ -56,3 +56,19 @@ func TestImportSandboxMode(t *testing.T) {
 		})
 	}
 }
+
+func TestImportReportsPublisherPolicyLoadFailure(t *testing.T) {
+	input, output := t.TempDir(), t.TempDir()
+	cmd := Root()
+	cmd.SetArgs([]string{"import", "--incoming-dir", input, "--extensions-dir", output, "--sandbox-mode", "disabled", "--publisher-policy", filepath.Join(t.TempDir(), "missing.json"), "--write-incoming-report"})
+	require.Error(t, cmd.Execute())
+	data, err := os.ReadFile(filepath.Join(input, "import-report.json"))
+	require.NoError(t, err)
+	var report struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(data, &report))
+	require.Equal(t, "failed", report.Status)
+	require.Contains(t, report.Error, "missing.json")
+}

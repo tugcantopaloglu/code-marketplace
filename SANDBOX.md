@@ -176,3 +176,42 @@ needs write access to published storage. Native file locks prevent concurrent
 imports and automatically release when a process exits. Hidden lock files remain
 on disk; do not delete them while an importer is running. The storage filesystem
 must support shared file locking and atomic renames.
+
+## Archiving and incoming reports
+
+Both features are optional; the default still leaves input files untouched:
+
+```console
+code-marketplace import --incoming-dir ./incoming --extensions-dir ./published --sandbox-mode disabled --publisher-policy ./publisher-policy.json --processed-dir ./processed --write-incoming-report
+```
+
+Only `imported` and `unchanged` packages are archived. Their VSIX, signature,
+publisher provenance, and sandbox report when present stay together in a unique
+`processed/<VSIX SHA-256>-<UUID>` directory. Waiting, rejected, conflicted, and
+failed inputs remain available for correction. Reports include `archiveStatus`,
+`archivedTo`, `archiveError`, and `recoveryDir` where applicable.
+
+Originals are held in a private `.archive-<UUID>` directory while verified copies
+are written under `processed/.partial-<UUID>`. The copy uses the hashes captured
+during admission. An atomic directory rename commits the bundle before originals
+are removed. This supports distinct Kubernetes subPath mounts without requiring
+a rename between mounts. Changed inputs or failed copies restore the originals
+without overwriting newly uploaded files. Copies or held originals are preserved
+if recovery cannot finish. `.archive-state.json` records the files, hashes,
+publication result, and destination. An unfinished holding directory is reported
+as `recoveryDirs` on subsequent runs and requires operator review.
+
+`incoming/import-report.json` is replaced atomically at startup, after each
+package, and at completion. It contains timestamps, `running`, `completed`, or
+`failed` run status, a top-level error, and per-file decisions. Startup policy
+load failures are recorded when the incoming path is writable. A second importer
+cannot overwrite the active importer's report while the published-storage lock
+is held. The protected `.last-import.json` also remains available to management.
+The next run replaces the latest report; each archived bundle retains its journal.
+
+With these features enabled the importer needs incoming write access and a
+separate writable processed directory. Pre-create a processed subPath before
+starting a Kubernetes Job. Keep publisher policy and scanner trust outside the
+share. Reporting and archiving do not change signature or publisher enforcement
+or the selected sandbox mode. A pod that cannot mount its volumes has not started
+the application and cannot write a report; diagnose that failure in pod Events.
