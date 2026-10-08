@@ -55,6 +55,7 @@ function Assert-ManifestScope($taskObject) {
     if ($taskObject.kind -eq 'CronJob') { $taskPod = $taskObject.spec.jobTemplate.spec.template.spec }
     if ($taskPod) {
         if ($taskPod.hostNetwork -or $taskPod.hostPID -or $taskPod.hostIPC -or $taskPod.nodeName -or $taskPod.priorityClassName) { throw 'Host access and global placement overrides are forbidden' }
+        if ($taskPod.preemptionPolicy) { throw 'Omit Pod preemptionPolicy; cluster admission determines it from the priority class' }
         if ($taskPod.automountServiceAccountToken -ne $false) { throw 'Workload service account tokens must be disabled' }
         foreach ($taskVolume in $taskPod.volumes) {
             if ($taskVolume.persistentVolumeClaim) {

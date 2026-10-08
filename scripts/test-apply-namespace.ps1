@@ -71,6 +71,9 @@ foreach ($taskUnsafeField in @('privileged','allowPrivilegeEscalation')) {
 }
 $global:taskScopeFixture = $taskSafeJob
 & ./scripts/apply-namespace.ps1 -Path ./README.md
+$taskUnsafeJob = ($taskSafeJob | ConvertTo-Json -Depth 100) | ConvertFrom-Json -AsHashtable
+$taskUnsafeJob.spec.template.spec.preemptionPolicy = 'Never'
+Assert-ScopeRejected $taskUnsafeJob
 $taskBootstrapRole = @{apiVersion='rbac.authorization.k8s.io/v1'; kind='Role'; metadata=@{name='code-marketplace-deployer'; namespace='code-marketplace'}; rules=@(@{apiGroups=@(''); resources=@('configmaps'); verbs=@('get','create','patch')})}
 $global:taskScopeFixture = @(@{apiVersion='v1'; kind='ServiceAccount'; metadata=@{name='code-marketplace-deployer'; namespace='code-marketplace'}; automountServiceAccountToken=$false},$taskBootstrapRole,@{apiVersion='rbac.authorization.k8s.io/v1'; kind='RoleBinding'; metadata=@{name='code-marketplace-deployer'; namespace='code-marketplace'}; roleRef=@{apiGroup='rbac.authorization.k8s.io'; kind='Role'; name='code-marketplace-deployer'}; subjects=@(@{kind='ServiceAccount'; name='code-marketplace-deployer'; namespace='code-marketplace'})})
 $global:taskScopeCalls.Clear()

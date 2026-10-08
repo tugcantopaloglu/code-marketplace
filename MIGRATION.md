@@ -65,6 +65,12 @@ namespace claim remains Bound to `code-marketplace-data`. `-ValidateOnly` perfor
 the manifest scope checks without apply. ConfigMap/Secret JSON generated with
 `kubectl create --dry-run=client --output=json` can be piped through the wrapper.
 
+Leave Pod `preemptionPolicy` unset. Priority admission derives it from the cluster's
+PriorityClass policy and can reject a conflicting explicit value before creating a
+Pod. Manifest schema checks do not exercise this admission logic. This upgrade
+does not create or change PriorityClass resources. See the
+[Pod API](https://kubernetes.io/docs/reference/kubernetes-api/core/pod-v1/).
+
 Keep PV, StorageClass, node configuration, and ingress/DNS controller installations
 outside the application upgrade. Namespace selectors in an application NetworkPolicy
 identify permitted peers without editing those namespaces. Namespaced API writes
