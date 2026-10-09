@@ -330,6 +330,24 @@ using code-marketplace with VS Code and VSCodium:
   codium
   ```
 
+## Local verification
+
+Use a Go toolchain compatible with the version declared in `go.mod`. From the repository root:
+
+```console
+go test -short ./...
+go vet ./...
+go mod verify
+go build -o ./bin/code-marketplace ./cmd/marketplace
+node scripts/test-signing-keys.cjs
+pwsh -NoProfile -File scripts/test-apply-namespace.ps1
+```
+
+The source build above produces `./bin/code-marketplace` (`code-marketplace.exe` on Windows when an executable extension is used). Use that path for local commands, for example `./bin/code-marketplace --help`. Deployment examples elsewhere in this document assume the binary has been copied to the working directory.
+
+The namespace check requires PowerShell 7 (`pwsh`) and substitutes local `kubectl` calls; it does not write to a cluster. `make test` additionally requires Make and `gotestsum` and writes a coverage profile. The direct Go commands above provide a portable entry point without installing those wrappers. The existing test workflow also runs Linux race checks for the management and admission services, local volume tests, and signing/namespace checks. Container scanning, Helm validation, releases, and offline bundles have separate workflows.
+
+These local tests do not authenticate against internal Active Directory, push to Harbor, or prove VS Code interface acceptance with your private CA. Before an offline rollout, validate the actual AD permissions, trusted HTTPS gallery access, archive admission/signatures, shared storage behavior, internal registry transfer, and editor install/update behavior in the designated environment. Use [OFFLINE.md](OFFLINE.md), [MANAGEMENT.md](MANAGEMENT.md), and [FORK.md](FORK.md) for the existing deployment and attribution procedures.
 ## Missing features
 
 - Recommended extensions.
