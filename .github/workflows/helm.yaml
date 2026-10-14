@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: azure/setup-helm@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -33,7 +33,7 @@ jobs:
       - run: helm lint --strict ./helm -f ./helm/values-offline.yaml -f ./helm/values-admin.yaml
       - run: helm lint --strict ./helm -f ./helm/values-offline.yaml --set importer.sandboxMode=disabled --set importer.sandboxTrust.configMap=
       - run: helm lint --strict ./helm -f ./helm/values-offline.yaml --set importer.processed.enabled=true --set importer.writeIncomingReport=true
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: |
