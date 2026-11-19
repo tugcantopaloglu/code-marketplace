@@ -139,6 +139,19 @@ For a manually managed CronJob, mount the Secret read-only at
 - "12001"
 ```
 
-A verified scan is required before the importer creates the release sidecar.
-If a sidecar already exists, the importer verifies it. Archive mode moves the
-generated sidecar together with the package and scan report after publication.
+By default, a verified scan is required before the importer creates the release
+sidecar. If a sidecar already exists, the importer verifies it. Archive mode
+moves the generated sidecar together with the package after publication.
+
+### Operate without a scanner for trusted internal uploads
+
+In v5, set `importer.internalAutoSign.skipSandbox: true` in Helm or add
+`--internal-auto-skip-sandbox` to the manual CronJob arguments. This setting
+requires the automatic signing key, internal policy, and trusted uploader UID.
+Only allowed extensions uploaded as `internal-*.vsix` by that Linux UID can be
+imported under this setting, including retries with an existing release sidecar.
+The importer records `sandboxMode: disabled` and generates the release sidecar.
+
+In a cluster whose Marketplace importer already uses `sandboxMode: disabled`,
+you may omit the sandbox trust ConfigMap and mount. All other internal packages
+still require a signed sandbox report and wait if sandbox trust is unavailable.

@@ -9,8 +9,15 @@
 {{- fail "importer.sandboxMode must be required or disabled" }}
 {{- end }}
 {{- $internalEnabled := not (empty .Values.importer.internalPolicy.configMap) }}
-{{- $sandboxTrustRequired := or (eq .Values.importer.sandboxMode "required") $internalEnabled }}
 {{- $autoSign := .Values.importer.internalAutoSign }}
+{{- if and (hasKey $autoSign "skipSandbox") (not (kindIs "bool" $autoSign.skipSandbox)) }}
+{{- fail "importer.internalAutoSign.skipSandbox must be a boolean" }}
+{{- end }}
+{{- $sandboxTrustRequired := or (eq .Values.importer.sandboxMode "required") (and $internalEnabled (not $autoSign.skipSandbox)) }}
+{{- $mountSandboxTrust := or $sandboxTrustRequired (and $internalEnabled (not (empty .Values.importer.sandboxTrust.configMap))) }}
+{{- if and $autoSign.skipSandbox (not $autoSign.secretName) }}
+{{- fail "importer.internalAutoSign.skipSandbox requires automatic internal signing" }}
+{{- end }}
 {{- if and $autoSign.secretName (not $internalEnabled) }}
 {{- fail "automatic internal signing requires importer.internalPolicy.configMap" }}
 {{- end }}
@@ -71,7 +78,7 @@ spec:
                 {{- end }}
                 - --sandbox-mode
                 - {{ .Values.importer.sandboxMode | quote }}
-                {{- if $sandboxTrustRequired }}
+                {{- if $mountSandboxTrust }}
                 - --sandbox-trust
                 - /sandbox-trust/trust.json
                 - --sandbox-max-age
@@ -88,6 +95,9 @@ spec:
                 - {{ required "importer.internalAutoSign.keyId is required" $autoSign.keyId | quote }}
                 - --internal-uploader-uid
                 - {{ $autoSign.uploaderUid | quote }}
+                {{- if $autoSign.skipSandbox }}
+                - --internal-auto-skip-sandbox
+                {{- end }}
                 {{- end }}
                 - --publisher-mode
                 - {{ .Values.importer.publisherPolicy.mode | quote }}
@@ -116,7 +126,7 @@ spec:
                   mountPath: /processed
                   subPath: {{ required "importer.processed.subPath is required" .Values.importer.processed.subPath | quote }}
                 {{- end }}
-                {{- if $sandboxTrustRequired }}
+                {{- if $mountSandboxTrust }}
                 - name: sandbox-trust
                   mountPath: /sandbox-trust
                   readOnly: true
@@ -148,7 +158,7 @@ spec:
               persistentVolumeClaim:
                 claimName: {{ .Values.importer.processed.existingClaim | default .Values.importer.incoming.existingClaim }}
             {{- end }}
-            {{- if $sandboxTrustRequired }}
+            {{- if $mountSandboxTrust }}
             - name: sandbox-trust
               configMap:
                 name: {{ required "importer.sandboxTrust.configMap is required" .Values.importer.sandboxTrust.configMap }}

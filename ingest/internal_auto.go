@@ -17,6 +17,7 @@ type InternalAutoSign struct {
 	Key         ed25519.PrivateKey
 	KeyID       string
 	UploaderUID uint32
+	SkipSandbox bool
 }
 
 func (a *InternalAutoSign) validate(policy *publisher.InternalPolicy) error {

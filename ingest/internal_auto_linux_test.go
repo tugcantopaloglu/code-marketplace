@@ -119,4 +119,53 @@ func TestAutomaticInternalImport(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, testutil.CreateVSIXFromExtension(t, other, storage.Version{Version: "1.0.0"}), 0o644))
 	require.Contains(t, run("rejected").Reason, "outside the internal policy")
 	require.NoFileExists(t, reportPath)
+
+	options.InternalAutoSign.SkipSandbox = true
+	sandboxPolicy := options.Policy
+	options.Policy = nil
+	options.Processed = ""
+	require.Contains(t, run("rejected").Reason, "outside the internal policy")
+
+	update := testutil.CreateVSIXFromExtension(t, extension, storage.Version{Version: "1.0.1"})
+	require.NoError(t, os.WriteFile(path, update, 0o644))
+	if os.Getuid() == 0 {
+		require.NoError(t, os.Chown(path, uid, -1))
+	}
+	result = run("imported")
+	require.Equal(t, "disabled", result.SandboxMode)
+	require.Equal(t, "robot", result.Internal.KeyID)
+	receiptPath := filepath.Join(published, extension.Publisher, extension.Name, "1.0.1", ReceiptName)
+	receiptBytes, err := os.ReadFile(receiptPath)
+	require.NoError(t, err)
+	var receipt Receipt
+	require.NoError(t, sandbox.Decode(receiptBytes, &receipt))
+	require.Equal(t, "disabled", receipt.SandboxMode)
+	require.Nil(t, receipt.Approval)
+	require.Equal(t, "disabled", run("unchanged").SandboxMode)
+
+	options.InternalAutoSign.UploaderUID++
+	require.Contains(t, run("rejected").Reason, "owned by UID")
+	options.InternalAutoSign.UploaderUID--
+
+	manualReportPath := filepath.Join(incoming, "probe"+publisher.InternalReportSuffix)
+	require.NoError(t, os.Rename(path, unprefixed))
+	require.NoError(t, os.Rename(reportPath, manualReportPath))
+	require.Contains(t, run("waiting").Reason, "requires configured sandbox trust")
+	require.NoError(t, os.Rename(unprefixed, path))
+	require.NoError(t, os.Rename(manualReportPath, reportPath))
+
+	options.InternalAutoSign.SkipSandbox = false
+	options.Policy = sandboxPolicy
+	require.Contains(t, run("waiting").Reason, ".sandbox.json")
+	report, err = sandbox.Sign(sandbox.Claims{SchemaVersion: 1, SHA256: publisher.Hash(update), Status: "completed", Verdict: "clean",
+		Scanner: "test", ScanID: "scan-2", ScannedAt: scanned, ExpiresAt: scanned.Add(time.Hour)}, "scanner", scanKey)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(scanPath, report, 0o600))
+	require.Contains(t, run("unchanged").Reason, "authenticated sandbox approval")
+	receiptBytes, err = os.ReadFile(receiptPath)
+	require.NoError(t, err)
+	var scannedReceipt Receipt
+	require.NoError(t, sandbox.Decode(receiptBytes, &scannedReceipt))
+	require.Equal(t, "required", scannedReceipt.SandboxMode)
+	require.NotNil(t, scannedReceipt.Approval)
 }

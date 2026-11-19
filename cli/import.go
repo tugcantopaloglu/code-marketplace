@@ -42,19 +42,6 @@ func importCommand() *cobra.Command {
 			if sandboxMode != "required" && sandboxMode != "disabled" {
 				return fmt.Errorf("--sandbox-mode must be required or disabled")
 			}
-			var policy *sandbox.Policy
-			if sandboxMode == "required" || internalPolicyPath != "" {
-				if trust == "" {
-					return fmt.Errorf("--sandbox-trust is required in required sandbox mode or when internal releases are enabled")
-				}
-				var err error
-				policy, err = sandbox.LoadPolicy(trust, maxAge)
-				if err != nil {
-					return err
-				}
-			} else if trust != "" {
-				return fmt.Errorf("--sandbox-trust must be omitted in disabled sandbox mode")
-			}
 			publisherPolicy, err := publisher.LoadPolicy(publisherPolicyPath, publisherMode, publisherMaxAge)
 			if err != nil {
 				return err
@@ -67,7 +54,7 @@ func importCommand() *cobra.Command {
 				}
 			}
 			var automatic *ingest.InternalAutoSign
-			if cmd.Flags().Changed("internal-auto-sign-key") || cmd.Flags().Changed("internal-auto-sign-key-id") || cmd.Flags().Changed("internal-uploader-uid") {
+			if cmd.Flags().Changed("internal-auto-sign-key") || cmd.Flags().Changed("internal-auto-sign-key-id") || cmd.Flags().Changed("internal-uploader-uid") || autoSign.SkipSandbox {
 				if internalPolicy == nil || autoSignKeyPath == "" || !internalKeyID.MatchString(autoSign.KeyID) || !cmd.Flags().Changed("internal-uploader-uid") {
 					return fmt.Errorf("automatic internal signing requires --internal-policy, --internal-auto-sign-key, --internal-auto-sign-key-id and --internal-uploader-uid")
 				}
@@ -76,6 +63,18 @@ func importCommand() *cobra.Command {
 					return fmt.Errorf("load internal automatic signing key: %w", err)
 				}
 				automatic = &autoSign
+			}
+			var policy *sandbox.Policy
+			if trust != "" {
+				if sandboxMode == "disabled" && internalPolicy == nil {
+					return fmt.Errorf("--sandbox-trust must be omitted in disabled sandbox mode")
+				}
+				policy, err = sandbox.LoadPolicy(trust, maxAge)
+				if err != nil {
+					return err
+				}
+			} else if sandboxMode == "required" || internalPolicy != nil && !autoSign.SkipSandbox {
+				return fmt.Errorf("--sandbox-trust is required for packages subject to mandatory sandbox admission")
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), interruptSignals...)
 			defer stop()
@@ -102,6 +101,7 @@ func importCommand() *cobra.Command {
 	cmd.Flags().StringVar(&autoSignKeyPath, "internal-auto-sign-key", "", "Optional dedicated Ed25519 private key for automatic internal release reports.")
 	cmd.Flags().StringVar(&autoSign.KeyID, "internal-auto-sign-key-id", "", "ID of the automatic release key in the internal policy.")
 	cmd.Flags().Uint32Var(&autoSign.UploaderUID, "internal-uploader-uid", 0, "Linux UID of the trusted uploader for automatic signing of internal-*.vsix.")
+	cmd.Flags().BoolVar(&autoSign.SkipSandbox, "internal-auto-skip-sandbox", false, "Allow only authorized internal-* uploads to be automatically imported without a sandbox report.")
 	cmd.Flags().DurationVar(&publisherMaxAge, "publisher-max-age", 7*24*time.Hour, "Maximum age and validity interval of publisher provenance reports.")
 	return cmd
 }

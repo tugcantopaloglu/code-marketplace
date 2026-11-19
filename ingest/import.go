@@ -92,7 +92,9 @@ func Run(ctx context.Context, options Options) (summary *Summary, runErr error) 
 	if options.SandboxMode != "required" && options.SandboxMode != "disabled" {
 		return nil, fmt.Errorf("sandbox mode must be required or disabled")
 	}
-	if (options.SandboxMode == "required" || options.InternalPolicy != nil) && (options.Policy == nil || len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0) {
+	skipInternalSandbox := options.InternalAutoSign != nil && options.InternalAutoSign.SkipSandbox
+	sandboxRequired := options.SandboxMode == "required" || options.InternalPolicy != nil && !skipInternalSandbox
+	if sandboxRequired && options.Policy == nil || options.Policy != nil && (len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0) {
 		return nil, fmt.Errorf("trusted sandbox approval is mandatory for scheduled imports")
 	}
 	if options.SandboxMode == "disabled" && options.InternalPolicy == nil && options.Policy != nil {
@@ -303,7 +305,17 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	internalName := base + publisher.InternalReportSuffix
 	if internal {
 		result.SandboxMode = "required"
+		skipSandbox := prefixed && options.InternalAutoSign.SkipSandbox
 		internalReport, err = read(input, internalName, sandbox.MaxReportSize)
+		if skipSandbox || prefixed && errors.Is(err, os.ErrNotExist) {
+			if err := options.InternalAutoSign.authorize(source, options.InternalPolicy, manifest); err != nil {
+				result.Reason = err.Error()
+				return result
+			}
+		}
+		if skipSandbox {
+			result.SandboxMode = "disabled"
+		}
 		switch {
 		case err == nil:
 			result.Internal, err = options.InternalPolicy.Verify(internalReport, vsix, manifest, time.Now().UTC())
@@ -313,10 +325,6 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 			}
 			result.sourceHashes[internalName] = result.Internal.ReportSHA256
 		case prefixed && errors.Is(err, os.ErrNotExist):
-			if err := options.InternalAutoSign.authorize(source, options.InternalPolicy, manifest); err != nil {
-				result.Reason = err.Error()
-				return result
-			}
 			autoSign = true
 		default:
 			return readFailure(result, err)
@@ -336,6 +344,10 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	var report []byte
 	var approval *sandbox.Approval
 	if result.SandboxMode == "required" {
+		if options.Policy == nil {
+			result.Status, result.Reason = "waiting", "this package requires configured sandbox trust and a signed scan report"
+			return result
+		}
 		report, err = read(input, base+".sandbox.json", sandbox.MaxReportSize)
 		if err != nil {
 			return readFailure(result, err)
@@ -401,7 +413,7 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		if receipt.Internal != nil {
 			storedReport, reportErr := read(output, filepath.Join(target, internalReportName), sandbox.MaxReportSize)
 			storedManifest, manifestErr := read(output, filepath.Join(target, "extension.vsixmanifest"), 2<<20)
-			if reportErr != nil || manifestErr != nil || hash(storedReport) != receipt.Internal.ReportSHA256 || !slices.Equal(storedManifest, privateManifest) || receipt.Approval == nil {
+			if reportErr != nil || manifestErr != nil || hash(storedReport) != receipt.Internal.ReportSHA256 || !slices.Equal(storedManifest, privateManifest) || (receipt.SandboxMode != "disabled" && receipt.Approval == nil) {
 				result.Status, result.Reason = "conflict", "published internal package is missing approved release metadata"
 				return result
 			}

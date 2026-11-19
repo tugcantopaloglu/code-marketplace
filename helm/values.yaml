@@ -166,6 +166,7 @@ importer:
     secretKey: internal-private.pem
     keyId: ""
     uploaderUid: ""
+    skipSandbox: false
   publisherPolicy:
     mode: verified
     maxAge: 168h
