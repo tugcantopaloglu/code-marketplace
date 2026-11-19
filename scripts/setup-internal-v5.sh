@@ -17,6 +17,7 @@ NAMESPACE = "code-marketplace"
 IMAGE = "harbor.tai.com.tr/code-marketplace/code-marketplace:v5"
 EXTENSION = "tusas.tusascode"
 FILENAME = "internal-plusaicode-0.1.23.vsix"
+ORIGINAL_FILENAME = FILENAME[len("internal-"):]
 KEY_ID = "tusas-auto-v5"
 POLICY = "marketplace-internal-policy"
 SECRET = "marketplace-internal-auto-sign-v5"
@@ -57,39 +58,114 @@ def uploader(uid, mode):
     return str(number)
 
 
-def find_uploader(local_path, expected, pod, container, incoming):
+def local_file_owner(path, expected, size):
     try:
-        info = local_path.lstat()
+        info = path.lstat()
     except FileNotFoundError:
-        info = None
-    if info is not None:
-        if not stat.S_ISREG(info.st_mode):
-            raise ValueError(f"Örnek dosya normal bir VSIX olmalı: {local_path}")
-        fd = os.open(local_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as package:
-            opened = os.fstat(package.fileno())
-            if not os.path.samestat(info, opened) or info.st_uid != opened.st_uid or info.st_mode != opened.st_mode:
-                raise ValueError("Örnek VSIX okunurken değişti. Kopyalama tamamlandıktan sonra yeniden çalıştırın.")
-            uid = uploader(opened.st_uid, format(stat.S_IMODE(opened.st_mode), "o"))
-            if expected:
-                digest = hashlib.sha256()
-                for block in iter(lambda: package.read(1 << 20), b""):
-                    digest.update(block)
-                if digest.hexdigest() != expected:
-                    raise ValueError(f"Örnek VSIX için SHA-256 uyuşmadı: {local_path}")
-            return uid
+        return None
+    if not stat.S_ISREG(info.st_mode) or size is not None and info.st_size != size:
+        return None
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as package:
+        opened = os.fstat(package.fileno())
+        if not os.path.samestat(info, opened) or info.st_uid != opened.st_uid or info.st_mode != opened.st_mode:
+            raise ValueError("Örnek VSIX okunurken değişti. Kopyalama tamamlandıktan sonra yeniden çalıştırın.")
+        if expected:
+            digest = hashlib.sha256()
+            for block in iter(lambda: package.read(1 << 20), b""):
+                digest.update(block)
+            if digest.hexdigest() != expected:
+                return None
+        return opened.st_uid, format(stat.S_IMODE(opened.st_mode), "o")
 
-    print("NFS yolu bu makinede bulunamadı. Importer volume'ü üzerinde salt okunur bir kontrol Job'u çalışıyor.", flush=True)
+
+def find_local_owner(directory, expected, size):
+    preferred = directory / FILENAME
+    try:
+        owner = local_file_owner(preferred, expected, size)
+        if owner is not None:
+            return uploader(*owner)
+        files = sorted(directory.iterdir())
+        matches = []
+        if expected:
+            for path in files:
+                if path != preferred and path.name.startswith("internal-") and path.suffix.lower() == ".vsix":
+                    owner = local_file_owner(path, expected, size)
+                    if owner is not None:
+                        matches.append((path, owner))
+        if len(matches) > 1:
+            raise ValueError(f"Aynı VSIX birden fazla internal- adıyla bulundu. Kullanılacak dosyayı {FILENAME} olarak adlandırın.")
+        if matches:
+            path, owner = matches[0]
+            print(f"Örnek VSIX bu adla bulundu: {path.name}", flush=True)
+            return uploader(*owner)
+        if (directory / ORIGINAL_FILENAME) in files:
+            raise ValueError(f"{directory / ORIGINAL_FILENAME} mevcut. Dosya adını {FILENAME} yapıp betiği yeniden çalıştırın.")
+        if preferred in files:
+            print(f"{preferred} bu makinede görünüyor ancak boyut, SHA-256 veya dosya türü eşleşmedi.", flush=True)
+        else:
+            print(f"{directory} bu makinede görünüyor, ancak eşleşen internal-*.vsix dosyası bulunamadı.", flush=True)
+    except (FileNotFoundError, NotADirectoryError):
+        print(f"{directory} bu makinede görünmüyor.", flush=True)
+    except PermissionError:
+        print(f"{directory} bu terminalde okunamıyor.", flush=True)
+    return None
+
+
+def find_uploader(directory, expected, size, pod, container, incoming):
+    local = find_local_owner(directory, expected, size)
+    if local is not None:
+        return local
+    print("CronJob'un incoming mount'u salt okunur bir kontrol Job'u ile doğrulanıyor.", flush=True)
     mount = next(m for m in container["volumeMounts"] if m["mountPath"] == incoming)
     volume = next(v for v in pod["volumes"] if v["name"] == mount["name"])
-    probe = """file=$1
-[ -f "$file" ] && [ ! -L "$file" ] || { printf '%s\\n' "Örnek VSIX incoming'de bulunamadı: $file" >&2; exit 1; }
-before=$(stat -c '%d %i %u %a' "$file")
-if [ -n "$2" ]; then
-    printf '%s  %s\\n' "$2" "$file" | sha256sum -c - >/dev/null
+    probe = """preferred=$1
+expected=$2
+size=$3
+original=$4
+directory=$(dirname "$preferred")
+matches_file() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    before=$(stat -c '%d %i %u %a %s' "$1") || return 1
+    if [ -n "$size" ] && [ "$(stat -c '%s' "$1")" != "$size" ]; then return 1; fi
+    if [ -n "$expected" ]; then
+        actual=$(sha256sum < "$1") || return 1
+        [ "${actual%% *}" = "$expected" ] || return 1
+    fi
+    [ "$(stat -c '%d %i %u %a %s' "$1")" = "$before" ]
+}
+if [ ! -d "$directory" ]; then
+    printf '%s\\n' "CronJob incoming dizini görünmüyor: $directory" >&2
+    exit 1
 fi
-[ "$(stat -c '%d %i %u %a' "$file")" = "$before" ] || exit 1
-stat -c 'MARKETPLACE_OWNER %u %a' "$file"
+selected=""
+if matches_file "$preferred"; then
+    selected=$preferred
+elif [ -n "$expected" ]; then
+    for file in "$directory"/internal-*; do
+        [ "$file" != "$preferred" ] || continue
+        case "$file" in *.[Vv][Ss][Ii][Xx]) ;; *) continue ;; esac
+        if matches_file "$file"; then
+            if [ -n "$selected" ]; then
+                printf '%s\\n' "Aynı VSIX birden fazla internal- adıyla bulundu. Kullanılacak dosyayı $(basename "$preferred") olarak adlandırın." >&2
+                exit 1
+            fi
+            selected=$file
+        fi
+    done
+fi
+if [ -z "$selected" ]; then
+    if [ -f "$directory/$original" ]; then
+        printf '%s\\n' "$original mevcut. Dosya adını $(basename "$preferred") yapıp betiği yeniden çalıştırın." >&2
+    elif [ -e "$preferred" ] || [ -L "$preferred" ]; then
+        printf '%s\\n' "$preferred mevcut ancak boyut, SHA-256 veya dosya türü eşleşmedi." >&2
+    else
+        printf '%s\\n' "$directory görünüyor ancak eşleşen internal-*.vsix dosyası bulunamadı. Beklenen örnek: $(basename "$preferred")." >&2
+    fi
+    exit 1
+fi
+printf '%s\\n' "Örnek VSIX: $(basename "$selected")"
+stat -c 'MARKETPLACE_OWNER %u %a' "$selected"
 """
     pod_keys = ("securityContext", "imagePullSecrets", "nodeSelector", "affinity",
                 "tolerations", "serviceAccountName", "runtimeClassName", "schedulerName")
@@ -100,7 +176,8 @@ stat -c 'MARKETPLACE_OWNER %u %a' "$file"
         "volumes": [volume],
         "containers": [{
             "name": "inspect-owner", "image": IMAGE, "imagePullPolicy": "IfNotPresent",
-            "command": ["/bin/sh"], "args": ["-ec", probe, "probe", str(PurePosixPath(incoming) / FILENAME), expected],
+            "command": ["/bin/sh"], "args": ["-ec", probe, "probe", str(PurePosixPath(incoming) / FILENAME),
+                                         expected, str(size) if size is not None else "", ORIGINAL_FILENAME],
             "volumeMounts": [{**mount, "readOnly": True}],
             "securityContext": container.get("securityContext", {}),
             "resources": container.get("resources", {}),
@@ -116,9 +193,15 @@ stat -c 'MARKETPLACE_OWNER %u %a' "$file"
         status = resource("job", name).get("status", {})
         conditions = {c["type"] for c in status.get("conditions", []) if c["status"] == "True"}
         if conditions & {"Failed", "Complete"}:
-            logs = kubectl("logs", "job/" + name)
+            try:
+                logs = kubectl("logs", "job/" + name)
+            except subprocess.CalledProcessError as error:
+                raise ValueError(f"Kontrol Job'u: {name}. Log okunamadı. {error.stderr.strip()}") from None
             match = re.search(r"^MARKETPLACE_OWNER ([0-9]+) ([0-7]+)$", logs, re.MULTILINE)
             if "Complete" in conditions and match:
+                found = next((line for line in logs.splitlines() if line.startswith("Örnek VSIX: ")), None)
+                if found:
+                    print(found, flush=True)
                 return uploader(*match.groups())
             raise ValueError(f"UID kontrolü başarısız. Kontrol Job'u: {name}. {logs.strip()}")
         time.sleep(2)
@@ -263,12 +346,13 @@ def main():
         uid = uploader(recorded, "644")
     else:
         expected = os.environ.get("MARKETPLACE_SETUP_SHA256", "")
-        uid = find_uploader(options.incoming / FILENAME, expected, pod, importer, incoming)
+        size = os.environ.get("MARKETPLACE_SETUP_SIZE", "")
+        uid = find_uploader(options.incoming, expected, int(size) if size else None, pod, importer, incoming)
     print(f"Seçilen dosya sahibi UID: {uid}", flush=True)
     entry = release_policy()
     configure_policy(entry)
     configure_cronjob(options.cronjob, job, pod, index, importer, incoming, uid)
-    print(f"Hazır. {NAMESPACE}/{options.cronjob} sonraki çalışmasında {FILENAME} dosyasını içe alır.")
+    print(f"Hazır. {NAMESPACE}/{options.cronjob} sonraki çalışmasında incoming klasörünü işler.")
 
 
 if __name__ == "__main__":

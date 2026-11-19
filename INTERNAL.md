@@ -163,3 +163,8 @@ For the manual `extension-importer` CronJob, place
 share or a temporary read-only Kubernetes Job, creates or reuses the release
 key, merges the public policy, and updates the importer. Push the v5 image to
 Harbor before running it.
+
+The packaged setup script matches the supplied PlusAI VSIX by SHA-256. It can
+find an alternate `internal-` filename and reports separately when the
+directory is visible but the expected package is absent. For the original
+`plusaicode-0.1.23.vsix` filename, add the `internal-` prefix before setup.
