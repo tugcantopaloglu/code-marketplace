@@ -155,3 +155,11 @@ The importer records `sandboxMode: disabled` and generates the release sidecar.
 In a cluster whose Marketplace importer already uses `sandboxMode: disabled`,
 you may omit the sandbox trust ConfigMap and mount. All other internal packages
 still require a signed sandbox report and wait if sandbox trust is unavailable.
+
+For the manual `extension-importer` CronJob, place
+`internal-plusaicode-0.1.23.vsix` in the incoming share and run
+`bash scripts/setup-internal-v5.sh` on a Linux workstation with `kubectl`,
+`python3`, and `openssl`. The script reads the uploader UID from the mounted
+share or a temporary read-only Kubernetes Job, creates or reuses the release
+key, merges the public policy, and updates the importer. Push the v5 image to
+Harbor before running it.
