@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/coder/code-marketplace/publisher"
 	"github.com/coder/code-marketplace/sandbox"
 	"github.com/coder/code-marketplace/storage"
 	"github.com/google/uuid"
@@ -130,7 +131,13 @@ func archivePackage(ctx context.Context, input, processed *os.Root, result Resul
 	}
 	base := strings.TrimSuffix(result.File, filepath.Ext(result.File))
 	var files []archiveFile
-	for _, name := range []string{result.File, base + ".sigzip", base + ".publisher.json", base + ".sandbox.json"} {
+	names := []string{result.File, base + ".sandbox.json"}
+	if result.Internal != nil {
+		names = append(names, base+publisher.InternalReportSuffix)
+	} else {
+		names = append(names, base+".sigzip", base+".publisher.json")
+	}
+	for _, name := range names {
 		limit := int64(sandbox.MaxReportSize)
 		if name == result.File || strings.HasSuffix(name, ".sigzip") {
 			limit = storage.MaxPackageSize

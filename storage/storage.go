@@ -93,8 +93,9 @@ type VSIXProperties struct {
 type PropertyType string
 
 const (
-	DependencyPropertyType PropertyType = "Microsoft.VisualStudio.Code.ExtensionDependencies"
-	PackPropertyType       PropertyType = "Microsoft.VisualStudio.Code.ExtensionPack"
+	DependencyPropertyType     PropertyType = "Microsoft.VisualStudio.Code.ExtensionDependencies"
+	PackPropertyType           PropertyType = "Microsoft.VisualStudio.Code.ExtensionPack"
+	PrivateMarketplaceProperty PropertyType = "PrivateMarketplace"
 )
 
 // VSIXProperty implements XMLManifest.PackageManifest.Metadata.Properties.Property.

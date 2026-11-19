@@ -103,6 +103,11 @@ func (s *Signature) Manifest(ctx context.Context, publisher, name string, versio
 				return manifest, nil
 			}
 		}
+		for _, property := range manifest.Metadata.Properties.Property {
+			if property.ID == PrivateMarketplaceProperty && property.Value == "true" {
+				return manifest, nil
+			}
+		}
 		copy := *manifest
 		copy.Assets.Asset = append([]VSIXAsset(nil), manifest.Assets.Asset...)
 		manifest = &copy

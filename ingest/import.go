@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,31 +24,34 @@ import (
 )
 
 const ReceiptName = ".import-receipt.json"
+const internalReportName = ".internal-report.json"
 
 type Receipt struct {
-	SchemaVersion int                 `json:"schemaVersion"`
-	SHA256        string              `json:"sha256"`
-	SignatureHash string              `json:"signatureSha256"`
-	ImportedAt    time.Time           `json:"importedAt"`
-	SandboxMode   string              `json:"sandboxMode,omitempty"`
-	Approval      *sandbox.Approval   `json:"sandbox,omitempty"`
-	Publisher     *publisher.Approval `json:"publisher,omitempty"`
+	SchemaVersion int                         `json:"schemaVersion"`
+	SHA256        string                      `json:"sha256"`
+	SignatureHash string                      `json:"signatureSha256,omitempty"`
+	ImportedAt    time.Time                   `json:"importedAt"`
+	SandboxMode   string                      `json:"sandboxMode,omitempty"`
+	Approval      *sandbox.Approval           `json:"sandbox,omitempty"`
+	Publisher     *publisher.Approval         `json:"publisher,omitempty"`
+	Internal      *publisher.InternalApproval `json:"internal,omitempty"`
 }
 
 type Result struct {
-	File                string              `json:"file"`
-	Extension           string              `json:"extension,omitempty"`
-	SHA256              string              `json:"sha256,omitempty"`
-	Status              string              `json:"status"`
-	SandboxMode         string              `json:"sandboxMode"`
-	Reason              string              `json:"reason,omitempty"`
-	Dependencies        []string            `json:"dependencies,omitempty"`
-	MissingDependencies []string            `json:"missingDependencies,omitempty"`
-	Publisher           *publisher.Approval `json:"publisher,omitempty"`
-	ArchiveStatus       string              `json:"archiveStatus,omitempty"`
-	ArchivedTo          string              `json:"archivedTo,omitempty"`
-	ArchiveError        string              `json:"archiveError,omitempty"`
-	RecoveryDir         string              `json:"recoveryDir,omitempty"`
+	File                string                      `json:"file"`
+	Extension           string                      `json:"extension,omitempty"`
+	SHA256              string                      `json:"sha256,omitempty"`
+	Status              string                      `json:"status"`
+	SandboxMode         string                      `json:"sandboxMode"`
+	Reason              string                      `json:"reason,omitempty"`
+	Dependencies        []string                    `json:"dependencies,omitempty"`
+	MissingDependencies []string                    `json:"missingDependencies,omitempty"`
+	Publisher           *publisher.Approval         `json:"publisher,omitempty"`
+	Internal            *publisher.InternalApproval `json:"internal,omitempty"`
+	ArchiveStatus       string                      `json:"archiveStatus,omitempty"`
+	ArchivedTo          string                      `json:"archivedTo,omitempty"`
+	ArchiveError        string                      `json:"archiveError,omitempty"`
+	RecoveryDir         string                      `json:"recoveryDir,omitempty"`
 	sourceHashes        map[string]string
 }
 
@@ -65,6 +70,7 @@ type Options struct {
 	Policy              *sandbox.Policy
 	SandboxMode         string
 	PublisherPolicy     *publisher.Policy
+	InternalPolicy      *publisher.InternalPolicy
 	Logger              slog.Logger
 	Processed           string
 	WriteIncomingReport bool
@@ -85,10 +91,10 @@ func Run(ctx context.Context, options Options) (summary *Summary, runErr error) 
 	if options.SandboxMode != "required" && options.SandboxMode != "disabled" {
 		return nil, fmt.Errorf("sandbox mode must be required or disabled")
 	}
-	if options.SandboxMode == "required" && (options.Policy == nil || len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0) {
+	if (options.SandboxMode == "required" || options.InternalPolicy != nil) && (options.Policy == nil || len(options.Policy.Keys) == 0 || options.Policy.MaxAge <= 0) {
 		return nil, fmt.Errorf("trusted sandbox approval is mandatory for scheduled imports")
 	}
-	if options.SandboxMode == "disabled" && options.Policy != nil {
+	if options.SandboxMode == "disabled" && options.InternalPolicy == nil && options.Policy != nil {
 		return nil, fmt.Errorf("sandbox policy must be omitted in disabled mode")
 	}
 	if options.PublisherPolicy == nil {
@@ -202,7 +208,7 @@ func Run(ctx context.Context, options Options) (summary *Summary, runErr error) 
 			}
 			continue
 		}
-		result := importPackage(ctx, input, output, store, options.Policy, options.PublisherPolicy, options.SandboxMode, entry.Name())
+		result := importPackage(ctx, input, output, store, options, entry.Name())
 		if processed != nil && (result.Status == "imported" || result.Status == "unchanged") {
 			result.ArchivedTo, result.RecoveryDir, err = archivePackage(ctx, input, processed, result)
 			result.ArchiveStatus = "archived"
@@ -243,8 +249,8 @@ func Run(ctx context.Context, options Options) (summary *Summary, runErr error) 
 	return summary, nil
 }
 
-func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, policy *sandbox.Policy, publisherPolicy *publisher.Policy, sandboxMode, name string) Result {
-	result := Result{File: name, Status: "rejected", SandboxMode: sandboxMode}
+func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, options Options, name string) Result {
+	result := Result{File: name, Status: "rejected", SandboxMode: options.SandboxMode}
 	vsix, err := read(input, name, storage.MaxPackageSize)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
@@ -279,24 +285,42 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		}
 	}
 	base := strings.TrimSuffix(name, filepath.Ext(name))
-	signature, err := read(input, base+".sigzip", storage.MaxPackageSize)
-	if err != nil {
-		return readFailure(result, err)
-	}
-	result.sourceHashes[base+".sigzip"] = hash(signature)
-	if err := extensionsign.ValidateSignatureArchive(vsix, signature); err != nil {
-		result.Reason = err.Error()
-		return result
+	var signature, internalReport []byte
+	var signatureHash string
+	if options.InternalPolicy.Handles(manifest) {
+		result.SandboxMode = "required"
+		reportName := base + publisher.InternalReportSuffix
+		internalReport, err = read(input, reportName, sandbox.MaxReportSize)
+		if err != nil {
+			return readFailure(result, err)
+		}
+		result.Internal, err = options.InternalPolicy.Verify(internalReport, vsix, manifest, time.Now().UTC())
+		if err != nil {
+			result.Reason = err.Error()
+			return result
+		}
+		result.sourceHashes[reportName] = result.Internal.ReportSHA256
+	} else {
+		signature, err = read(input, base+".sigzip", storage.MaxPackageSize)
+		if err != nil {
+			return readFailure(result, err)
+		}
+		signatureHash = hash(signature)
+		result.sourceHashes[base+".sigzip"] = signatureHash
+		if err := extensionsign.ValidateSignatureArchive(vsix, signature); err != nil {
+			result.Reason = err.Error()
+			return result
+		}
 	}
 	var report []byte
 	var approval *sandbox.Approval
-	if sandboxMode == "required" {
+	if result.SandboxMode == "required" {
 		report, err = read(input, base+".sandbox.json", sandbox.MaxReportSize)
 		if err != nil {
 			return readFailure(result, err)
 		}
 		result.sourceHashes[base+".sandbox.json"] = hash(report)
-		approval, err = policy.Verify(report, vsix, time.Now().UTC())
+		approval, err = options.Policy.Verify(report, vsix, time.Now().UTC())
 		if err != nil {
 			result.Reason = err.Error()
 			return result
@@ -307,37 +331,59 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		return result
 	}
 	var publisherReport []byte
-	if publisherPolicy.Mode != "any" {
+	publisherRequired := result.Internal == nil && options.PublisherPolicy.Mode != "any"
+	if publisherRequired {
 		publisherReport, err = read(input, base+".publisher.json", sandbox.MaxReportSize)
 		if err != nil {
 			return readFailure(result, err)
 		}
 		result.sourceHashes[base+".publisher.json"] = hash(publisherReport)
+		result.Publisher, err = options.PublisherPolicy.Verify(publisherReport, vsix, signature, manifest, time.Now().UTC())
+		if err != nil {
+			result.Reason = err.Error()
+			return result
+		}
 	}
-	result.Publisher, err = publisherPolicy.Verify(publisherReport, vsix, signature, manifest, time.Now().UTC())
-	if err != nil {
-		result.Reason = err.Error()
-		return result
+	var privateManifest []byte
+	if result.Internal != nil {
+		privateManifest, err = internalMarketplaceManifest(manifest)
+		if err != nil {
+			result.Status, result.Reason = "failed", err.Error()
+			return result
+		}
 	}
 	target := filepath.Join(identity.Publisher, identity.ID, version.String())
 	if _, err := output.Stat(target); err == nil {
 		data, err := read(output, filepath.Join(target, ReceiptName), sandbox.MaxReportSize)
 		var receipt Receipt
-		if err != nil || sandbox.Decode(data, &receipt) != nil || receipt.SchemaVersion != 1 || receipt.SHA256 != result.SHA256 || receipt.SignatureHash != hash(signature) {
+		if err != nil || sandbox.Decode(data, &receipt) != nil || receipt.SchemaVersion != 1 || receipt.SHA256 != result.SHA256 || receipt.SignatureHash != signatureHash || (receipt.Internal == nil) != (result.Internal == nil) {
 			result.Status, result.Reason = "conflict", "version already exists with different bytes or without a trusted import receipt"
 			return result
 		}
-		if publisherPolicy.Mode != "any" && receipt.Publisher == nil {
+		if publisherRequired && receipt.Publisher == nil {
 			result.Status, result.Reason = "conflict", "existing version has no publisher provenance receipt; explicit migration is required"
 			return result
 		}
 		stored, err := read(output, filepath.Join(target, storage.ExtensionVSIXNameFromManifest(manifest)+".vsix"), storage.MaxPackageSize)
-		storedSignature, sigErr := read(output, filepath.Join(target, storage.SignatureArchiveFilename(manifest)), storage.MaxPackageSize)
-		if err != nil || sigErr != nil || hash(stored) != result.SHA256 || hash(storedSignature) != receipt.SignatureHash {
+		if err != nil || hash(stored) != result.SHA256 {
 			result.Status, result.Reason = "conflict", "published files do not match their import receipt"
 			return result
 		}
-		if sandboxMode == "required" && (receipt.SandboxMode == "disabled" || receipt.Approval == nil) {
+		if receipt.Internal != nil {
+			storedReport, reportErr := read(output, filepath.Join(target, internalReportName), sandbox.MaxReportSize)
+			storedManifest, manifestErr := read(output, filepath.Join(target, "extension.vsixmanifest"), 2<<20)
+			if reportErr != nil || manifestErr != nil || hash(storedReport) != receipt.Internal.ReportSHA256 || !slices.Equal(storedManifest, privateManifest) || receipt.Approval == nil {
+				result.Status, result.Reason = "conflict", "published internal package is missing approved release metadata"
+				return result
+			}
+		} else {
+			storedSignature, sigErr := read(output, filepath.Join(target, storage.SignatureArchiveFilename(manifest)), storage.MaxPackageSize)
+			if sigErr != nil || hash(storedSignature) != receipt.SignatureHash {
+				result.Status, result.Reason = "conflict", "published files do not match their import receipt"
+				return result
+			}
+		}
+		if result.SandboxMode == "required" && (receipt.SandboxMode == "disabled" || receipt.Approval == nil) {
 			receipt.SandboxMode, receipt.Approval = "required", approval
 			data, err := json.Marshal(receipt)
 			var versionRoot *os.Root
@@ -363,15 +409,17 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		result.Status, result.Reason = "failed", err.Error()
 		return result
 	}
-	receipt := Receipt{SchemaVersion: 1, SHA256: result.SHA256, SignatureHash: hash(signature), ImportedAt: time.Now().UTC(), SandboxMode: sandboxMode, Approval: approval, Publisher: result.Publisher}
+	receipt := Receipt{SchemaVersion: 1, SHA256: result.SHA256, SignatureHash: signatureHash, ImportedAt: time.Now().UTC(), SandboxMode: result.SandboxMode, Approval: approval, Publisher: result.Publisher, Internal: result.Internal}
 	data, err := json.Marshal(receipt)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
 		return result
 	}
-	files := []storage.File{
-		{RelativePath: storage.SignatureArchiveFilename(manifest), Content: signature},
-		{RelativePath: ReceiptName, Content: data},
+	files := []storage.File{{RelativePath: ReceiptName, Content: data}}
+	if result.Internal != nil {
+		files = append(files, storage.File{RelativePath: internalReportName, Content: internalReport}, storage.File{RelativePath: "extension.vsixmanifest", Content: privateManifest})
+	} else {
+		files = append(files, storage.File{RelativePath: storage.SignatureArchiveFilename(manifest), Content: signature})
 	}
 	if approval != nil {
 		files = append(files, storage.File{RelativePath: ".sandbox-report.json", Content: report})
@@ -386,6 +434,19 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	}
 	result.Status = "imported"
 	return result
+}
+
+func internalMarketplaceManifest(manifest *storage.VSIXManifest) ([]byte, error) {
+	properties := &manifest.Metadata.Properties.Property
+	*properties = slices.DeleteFunc(*properties, func(property storage.VSIXProperty) bool {
+		return strings.EqualFold(string(property.ID), string(storage.PrivateMarketplaceProperty))
+	})
+	*properties = append(*properties, storage.VSIXProperty{ID: storage.PrivateMarketplaceProperty, Value: "true"})
+	manifest.Assets.Asset = slices.DeleteFunc(manifest.Assets.Asset, func(asset storage.VSIXAsset) bool {
+		return strings.EqualFold(string(asset.Type), string(storage.VSIXSignatureType)) ||
+			strings.EqualFold(string(asset.Type), string(storage.VSIXAssetType))
+	})
+	return xml.Marshal(manifest)
 }
 
 func readFailure(result Result, err error) Result {

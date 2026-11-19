@@ -18,6 +18,7 @@ func importCommand() *cobra.Command {
 	var maxAge time.Duration
 	var sandboxMode string
 	var publisherMode, publisherPolicyPath string
+	var internalPolicyPath string
 	var publisherMaxAge time.Duration
 	var processed string
 	var writeIncomingReport bool
@@ -40,9 +41,9 @@ func importCommand() *cobra.Command {
 				return fmt.Errorf("--sandbox-mode must be required or disabled")
 			}
 			var policy *sandbox.Policy
-			if sandboxMode == "required" {
+			if sandboxMode == "required" || internalPolicyPath != "" {
 				if trust == "" {
-					return fmt.Errorf("--sandbox-trust is required in required sandbox mode")
+					return fmt.Errorf("--sandbox-trust is required in required sandbox mode or when internal releases are enabled")
 				}
 				var err error
 				policy, err = sandbox.LoadPolicy(trust, maxAge)
@@ -56,10 +57,17 @@ func importCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var internalPolicy *publisher.InternalPolicy
+			if internalPolicyPath != "" {
+				internalPolicy, err = publisher.LoadInternalPolicy(internalPolicyPath)
+				if err != nil {
+					return err
+				}
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), interruptSignals...)
 			defer stop()
 			runStarted = true
-			summary, err := ingest.Run(ctx, ingest.Options{Incoming: incoming, Storage: destination, SandboxMode: sandboxMode, Policy: policy, PublisherPolicy: publisherPolicy, Logger: cmdLogger(cmd), Processed: processed, WriteIncomingReport: writeIncomingReport})
+			summary, err := ingest.Run(ctx, ingest.Options{Incoming: incoming, Storage: destination, SandboxMode: sandboxMode, Policy: policy, PublisherPolicy: publisherPolicy, InternalPolicy: internalPolicy, Logger: cmdLogger(cmd), Processed: processed, WriteIncomingReport: writeIncomingReport})
 			if summary != nil {
 				if writeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(summary); writeErr != nil {
 					return writeErr
@@ -77,6 +85,7 @@ func importCommand() *cobra.Command {
 	cmd.Flags().DurationVar(&maxAge, "sandbox-max-age", 24*time.Hour, "Maximum sandbox report age and validity interval.")
 	cmd.Flags().StringVar(&publisherMode, "publisher-mode", "verified", "Publisher restriction: verified, allowlist, or any. Verified mode also applies a configured allowlist.")
 	cmd.Flags().StringVar(&publisherPolicyPath, "publisher-policy", "", "Trusted publisher collector keys and allowed publisher names JSON file.")
+	cmd.Flags().StringVar(&internalPolicyPath, "internal-policy", "", "Optional trusted release keys and exact extension IDs for internal VSIX packages.")
 	cmd.Flags().DurationVar(&publisherMaxAge, "publisher-max-age", 7*24*time.Hour, "Maximum age and validity interval of publisher provenance reports.")
 	return cmd
 }

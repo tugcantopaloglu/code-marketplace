@@ -158,6 +158,9 @@ importer:
   sandboxTrust:
     configMap: ""
     key: sandbox-trust.json
+  internalPolicy:
+    configMap: ""
+    key: internal-policy.json
   publisherPolicy:
     mode: verified
     maxAge: 168h

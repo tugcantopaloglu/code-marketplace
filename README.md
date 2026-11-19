@@ -189,6 +189,9 @@ signature integration test.
 
 ### Sandbox-approved offline imports
 
+For extensions built and distributed entirely inside your organization, see
+[Offline internal VSIX releases](INTERNAL.md).
+
 Use the gated importer for scheduled imports from an offline share:
 
 ```console

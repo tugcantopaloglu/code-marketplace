@@ -8,6 +8,8 @@
 {{- if not (has .Values.importer.sandboxMode (list "required" "disabled")) }}
 {{- fail "importer.sandboxMode must be required or disabled" }}
 {{- end }}
+{{- $internalEnabled := not (empty .Values.importer.internalPolicy.configMap) }}
+{{- $sandboxTrustRequired := or (eq .Values.importer.sandboxMode "required") $internalEnabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -62,11 +64,15 @@ spec:
                 {{- end }}
                 - --sandbox-mode
                 - {{ .Values.importer.sandboxMode | quote }}
-                {{- if eq .Values.importer.sandboxMode "required" }}
+                {{- if $sandboxTrustRequired }}
                 - --sandbox-trust
                 - /sandbox-trust/trust.json
                 - --sandbox-max-age
                 - {{ .Values.importer.sandboxMaxAge | quote }}
+                {{- end }}
+                {{- if $internalEnabled }}
+                - --internal-policy
+                - /internal-policy/policy.json
                 {{- end }}
                 - --publisher-mode
                 - {{ .Values.importer.publisherPolicy.mode | quote }}
@@ -95,9 +101,14 @@ spec:
                   mountPath: /processed
                   subPath: {{ required "importer.processed.subPath is required" .Values.importer.processed.subPath | quote }}
                 {{- end }}
-                {{- if eq .Values.importer.sandboxMode "required" }}
+                {{- if $sandboxTrustRequired }}
                 - name: sandbox-trust
                   mountPath: /sandbox-trust
+                  readOnly: true
+                {{- end }}
+                {{- if $internalEnabled }}
+                - name: internal-policy
+                  mountPath: /internal-policy
                   readOnly: true
                 {{- end }}
                 {{- if ne .Values.importer.publisherPolicy.mode "any" }}
@@ -117,13 +128,21 @@ spec:
               persistentVolumeClaim:
                 claimName: {{ .Values.importer.processed.existingClaim | default .Values.importer.incoming.existingClaim }}
             {{- end }}
-            {{- if eq .Values.importer.sandboxMode "required" }}
+            {{- if $sandboxTrustRequired }}
             - name: sandbox-trust
               configMap:
                 name: {{ required "importer.sandboxTrust.configMap is required" .Values.importer.sandboxTrust.configMap }}
                 items:
                   - key: {{ .Values.importer.sandboxTrust.key | quote }}
                     path: trust.json
+            {{- end }}
+            {{- if $internalEnabled }}
+            - name: internal-policy
+              configMap:
+                name: {{ .Values.importer.internalPolicy.configMap | quote }}
+                items:
+                  - key: {{ .Values.importer.internalPolicy.key | quote }}
+                    path: policy.json
             {{- end }}
             {{- if ne .Values.importer.publisherPolicy.mode "any" }}
             - name: publisher-policy
