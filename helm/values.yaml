@@ -161,6 +161,11 @@ importer:
   internalPolicy:
     configMap: ""
     key: internal-policy.json
+  internalAutoSign:
+    secretName: ""
+    secretKey: internal-private.pem
+    keyId: ""
+    uploaderUid: ""
   publisherPolicy:
     mode: verified
     maxAge: 168h

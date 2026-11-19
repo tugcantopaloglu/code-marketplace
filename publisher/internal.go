@@ -1,6 +1,7 @@
 package publisher
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -75,6 +76,10 @@ func LoadInternalPolicy(path string) (*InternalPolicy, error) {
 
 func (p *InternalPolicy) Handles(manifest *storage.VSIXManifest) bool {
 	return p != nil && len(p.keysByExtension[internalExtensionID(manifest)]) != 0
+}
+
+func (p *InternalPolicy) AllowsKey(manifest *storage.VSIXManifest, keyID string, key ed25519.PublicKey) bool {
+	return p.Handles(manifest) && len(key) == ed25519.PublicKeySize && bytes.Equal(p.keysByExtension[internalExtensionID(manifest)][keyID], key)
 }
 
 func (p *InternalPolicy) Verify(data, vsix []byte, manifest *storage.VSIXManifest, now time.Time) (*InternalApproval, error) {

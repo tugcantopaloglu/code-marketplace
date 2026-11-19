@@ -10,6 +10,13 @@
 {{- end }}
 {{- $internalEnabled := not (empty .Values.importer.internalPolicy.configMap) }}
 {{- $sandboxTrustRequired := or (eq .Values.importer.sandboxMode "required") $internalEnabled }}
+{{- $autoSign := .Values.importer.internalAutoSign }}
+{{- if and $autoSign.secretName (not $internalEnabled) }}
+{{- fail "automatic internal signing requires importer.internalPolicy.configMap" }}
+{{- end }}
+{{- if and $autoSign.secretName (not (regexMatch "^[1-9][0-9]{0,9}$" (toString $autoSign.uploaderUid))) }}
+{{- fail "automatic internal signing requires importer.internalAutoSign.uploaderUid to be a positive Linux UID" }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -74,6 +81,14 @@ spec:
                 - --internal-policy
                 - /internal-policy/policy.json
                 {{- end }}
+                {{- if $autoSign.secretName }}
+                - --internal-auto-sign-key
+                - /internal-auto-sign/internal-private.pem
+                - --internal-auto-sign-key-id
+                - {{ required "importer.internalAutoSign.keyId is required" $autoSign.keyId | quote }}
+                - --internal-uploader-uid
+                - {{ $autoSign.uploaderUid | quote }}
+                {{- end }}
                 - --publisher-mode
                 - {{ .Values.importer.publisherPolicy.mode | quote }}
                 - --publisher-max-age
@@ -87,7 +102,7 @@ spec:
               volumeMounts:
                 - name: incoming
                   mountPath: /incoming
-                  readOnly: {{ not (or .Values.importer.processed.enabled .Values.importer.writeIncomingReport) }}
+                  readOnly: {{ not (or .Values.importer.processed.enabled .Values.importer.writeIncomingReport $autoSign.secretName) }}
                   {{- with .Values.importer.incoming.subPath }}
                   subPath: {{ . | quote }}
                   {{- end }}
@@ -109,6 +124,11 @@ spec:
                 {{- if $internalEnabled }}
                 - name: internal-policy
                   mountPath: /internal-policy
+                  readOnly: true
+                {{- end }}
+                {{- if $autoSign.secretName }}
+                - name: internal-auto-sign
+                  mountPath: /internal-auto-sign
                   readOnly: true
                 {{- end }}
                 {{- if ne .Values.importer.publisherPolicy.mode "any" }}
@@ -143,6 +163,15 @@ spec:
                 items:
                   - key: {{ .Values.importer.internalPolicy.key | quote }}
                     path: policy.json
+            {{- end }}
+            {{- if $autoSign.secretName }}
+            - name: internal-auto-sign
+              secret:
+                secretName: {{ $autoSign.secretName | quote }}
+                defaultMode: 288
+                items:
+                  - key: {{ $autoSign.secretKey | quote }}
+                    path: internal-private.pem
             {{- end }}
             {{- if ne .Values.importer.publisherPolicy.mode "any" }}
             - name: publisher-policy

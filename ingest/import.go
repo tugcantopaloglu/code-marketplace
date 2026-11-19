@@ -71,6 +71,7 @@ type Options struct {
 	SandboxMode         string
 	PublisherPolicy     *publisher.Policy
 	InternalPolicy      *publisher.InternalPolicy
+	InternalAutoSign    *InternalAutoSign
 	Logger              slog.Logger
 	Processed           string
 	WriteIncomingReport bool
@@ -102,6 +103,11 @@ func Run(ctx context.Context, options Options) (summary *Summary, runErr error) 
 	}
 	if err := options.PublisherPolicy.Validate(); err != nil {
 		return nil, err
+	}
+	if options.InternalAutoSign != nil {
+		if err := options.InternalAutoSign.validate(options.InternalPolicy); err != nil {
+			return nil, err
+		}
 	}
 	if err := os.MkdirAll(options.Storage, 0o755); err != nil {
 		return nil, err
@@ -251,7 +257,7 @@ func Run(ctx context.Context, options Options) (summary *Summary, runErr error) 
 
 func importPackage(ctx context.Context, input, output *os.Root, store storage.Storage, options Options, name string) Result {
 	result := Result{File: name, Status: "rejected", SandboxMode: options.SandboxMode}
-	vsix, err := read(input, name, storage.MaxPackageSize)
+	vsix, source, err := readWithInfo(input, name, storage.MaxPackageSize)
 	if err != nil {
 		result.Status, result.Reason = "failed", err.Error()
 		return result
@@ -285,21 +291,36 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 		}
 	}
 	base := strings.TrimSuffix(name, filepath.Ext(name))
+	internal := options.InternalPolicy.Handles(manifest)
+	prefixed := options.InternalAutoSign != nil && strings.HasPrefix(base, "internal-")
+	if prefixed && !internal {
+		result.Reason = "extension is outside the internal policy for automatic signing"
+		return result
+	}
 	var signature, internalReport []byte
 	var signatureHash string
-	if options.InternalPolicy.Handles(manifest) {
+	autoSign := false
+	internalName := base + publisher.InternalReportSuffix
+	if internal {
 		result.SandboxMode = "required"
-		reportName := base + publisher.InternalReportSuffix
-		internalReport, err = read(input, reportName, sandbox.MaxReportSize)
-		if err != nil {
+		internalReport, err = read(input, internalName, sandbox.MaxReportSize)
+		switch {
+		case err == nil:
+			result.Internal, err = options.InternalPolicy.Verify(internalReport, vsix, manifest, time.Now().UTC())
+			if err != nil {
+				result.Reason = err.Error()
+				return result
+			}
+			result.sourceHashes[internalName] = result.Internal.ReportSHA256
+		case prefixed && errors.Is(err, os.ErrNotExist):
+			if err := options.InternalAutoSign.authorize(source, options.InternalPolicy, manifest); err != nil {
+				result.Reason = err.Error()
+				return result
+			}
+			autoSign = true
+		default:
 			return readFailure(result, err)
 		}
-		result.Internal, err = options.InternalPolicy.Verify(internalReport, vsix, manifest, time.Now().UTC())
-		if err != nil {
-			result.Reason = err.Error()
-			return result
-		}
-		result.sourceHashes[reportName] = result.Internal.ReportSHA256
 	} else {
 		signature, err = read(input, base+".sigzip", storage.MaxPackageSize)
 		if err != nil {
@@ -329,6 +350,14 @@ func importPackage(ctx context.Context, input, output *os.Root, store storage.St
 	if err := storage.ValidatePackage(manifest, vsix); err != nil {
 		result.Reason = err.Error()
 		return result
+	}
+	if autoSign {
+		internalReport, result.Internal, err = options.InternalAutoSign.sign(input, internalName, vsix, manifest, options.InternalPolicy)
+		if err != nil {
+			result.Status, result.Reason = "failed", err.Error()
+			return result
+		}
+		result.sourceHashes[internalName] = result.Internal.ReportSHA256
 	}
 	var publisherReport []byte
 	publisherRequired := result.Internal == nil && options.PublisherPolicy.Mode != "any"
@@ -459,33 +488,38 @@ func readFailure(result Result, err error) Result {
 }
 
 func read(root *os.Root, name string, limit int64) ([]byte, error) {
+	data, _, err := readWithInfo(root, name, limit)
+	return data, err
+}
+
+func readWithInfo(root *os.Root, name string, limit int64) ([]byte, os.FileInfo, error) {
 	info, err := root.Lstat(name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s must be a regular file", name)
+		return nil, nil, fmt.Errorf("%s must be a regular file", name)
 	}
 	file, err := root.Open(name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		return nil, fmt.Errorf("%s changed while opening", name)
+		return nil, nil, fmt.Errorf("%s changed while opening", name)
 	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("%s exceeds size limit", name)
+		return nil, nil, fmt.Errorf("%s exceeds size limit", name)
 	}
-	return data, nil
+	return data, opened, nil
 }
 
 func overlaps(a, b string) bool {

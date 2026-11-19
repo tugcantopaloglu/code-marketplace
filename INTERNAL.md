@@ -42,7 +42,7 @@ importer:
 ```
 
 For an existing manually managed CronJob, update the server and importer images to
-`v3`. Mount both ConfigMaps read-only and add
+the new version. Mount both ConfigMaps read-only and add
 `--internal-policy /internal-policy/policy.json` and
 `--sandbox-trust /sandbox-trust/trust.json` to the importer arguments, using the
 actual mounted filenames. Preserve the existing incoming and published PVCs and
@@ -78,3 +78,67 @@ The release report is valid for 24 hours by default. Use `--valid-for` to select
 up to 168 hours. To renew an expired report, produce a fresh copy in a different
 directory with `--output-dir` and replace the old report on the incoming share.
 An expired release or scan report blocks new imports until it is renewed.
+
+## Drop an internal VSIX into incoming
+
+Version `v4` adds optional automatic release signing on Linux. Once configured,
+use a trusted release account to upload
+`incoming/internal-plusaicode-0.1.23.vsix`. Use a `.part` filename during the
+copy, remove group and other write permissions, and rename to `.vsix` when the
+copy is complete. The importer checks the Linux file owner and extension ID,
+waits for the scanner's matching `internal-plusaicode-0.1.23.sandbox.json`,
+then creates `internal-plusaicode-0.1.23.internal.json` and publishes the package.
+The scanner must watch the same incoming share and sign real scan results.
+
+On the file server, assign a dedicated non-root upload identity. The Linux node
+must see its numeric UID on the file. Use a share configuration that preserves
+distinct identities and prevents other uploaders from assuming this UID or
+writing files it owns. Check a representative upload with
+`stat -c 'uid=%u mode=%a' incoming/internal-plusaicode-0.1.23.vsix`.
+The importer rejects group-writable or world-writable packages for automatic
+signing. Use the manual release signature workflow if the share maps uploaders
+to one identity.
+
+Generate a dedicated automatic release key once. Preserve existing entries in
+`internal-policy.json` when adding this key. Scope it to the extensions that the
+upload identity may release.
+
+```powershell
+.\code-marketplace.exe internal keygen tusas.tusascode --key-id tusas-auto-1 --output-dir C:\Protected\MarketplaceAuto
+```
+
+Apply the public policy as described above, and store the matching private key in
+a Kubernetes Secret accessible only to the importer workload and its operators.
+Run this from a protected operator environment with access to the key:
+
+```bash
+kubectl -n code-marketplace create secret generic marketplace-internal-auto-sign \
+  --from-file=internal-private.pem=./internal-private.pem
+```
+
+For Helm, include these settings alongside the internal and sandbox ConfigMaps.
+Replace the example UID with the trusted uploader's numeric UID:
+
+```yaml
+importer:
+  internalAutoSign:
+    secretName: marketplace-internal-auto-sign
+    keyId: tusas-auto-1
+    uploaderUid: "12001"
+```
+
+For a manually managed CronJob, mount the Secret read-only at
+`/internal-auto-sign`, allow the importer to write to `/incoming`, and append:
+
+```yaml
+- --internal-auto-sign-key
+- /internal-auto-sign/internal-private.pem
+- --internal-auto-sign-key-id
+- tusas-auto-1
+- --internal-uploader-uid
+- "12001"
+```
+
+A verified scan is required before the importer creates the release sidecar.
+If a sidecar already exists, the importer verifies it. Archive mode moves the
+generated sidecar together with the package and scan report after publication.
