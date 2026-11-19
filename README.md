@@ -107,6 +107,10 @@ receive requests.
 
 ## Adding extensions
 
+For a Windows technician interface with Marketplace search, folder selection,
+and automatic dependency collection, see the [package collector](COLLECTOR.md).
+It runs as a separate executable and prepares bundles for the existing importer.
+
 Extensions can be added to the marketplace by file, directory, or web URL.
 
 ```console

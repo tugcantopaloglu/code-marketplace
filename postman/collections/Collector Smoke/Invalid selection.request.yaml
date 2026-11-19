@@ -1,0 +1,17 @@
+$kind: http-request
+name: Invalid selection
+method: POST
+url: '{{baseUrl}}/api/jobs'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: '{"ids":["../invalid"],"destination":"relative"}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |
+      pm.test('Invalid identity is rejected without downloading', () => pm.response.to.have.status(400));
+      pm.test('Error is actionable JSON', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);

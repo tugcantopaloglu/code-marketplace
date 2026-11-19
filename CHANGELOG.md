@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a standalone Windows technician collector with a local Turkish search UI,
+  Verified publisher badges, native folder selection, automatic recursive
+  dependency/extension-pack collection, cancellation, and offline transfer reports.
+- Bound large Marketplace metadata histories at 64 MiB so established Java,
+  Continue, and Jupyter extensions can be collected without helper programs.
+- Protect all collector API routes with a per-launch capability, keep private
+  configuration under an account-only Windows ACL, enforce HTTPS asset-port
+  restrictions, and publish package files without replacement races. Use the
+  security-patched Go 1.27.4 toolchain and golang.org/x/mod v0.40.0.
+- Show the native folder picker even when deployment starts the EXE hidden;
+  keep callback state in an integer-indexed registry instead of a raw Go pointer.
+
 - Add a separate YAML-configured management API/UI with LDAPS or mandatory
   LDAP StartTLS, nested AD group roles, bounded sessions, CSRF/Origin protection,
   read-only catalog/policy/import views, and persistent audit records.

@@ -1,0 +1,10 @@
+$kind: http-request
+name: Unknown job
+method: GET
+url: '{{baseUrl}}/api/jobs/does-not-exist'
+order: 3000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |
+      pm.test('Unknown jobs return 404', () => pm.response.to.have.status(404));

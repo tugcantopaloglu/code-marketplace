@@ -1,0 +1,28 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/search?q=string&page=1"
+  method: GET
+  headers:
+    - key: Authorization
+      value: Bearer <token>
+      description: "Added as a part of security scheme: bearer"
+    - key: Accept
+      value: application/json
+  queryParams:
+    q: string
+    page: "1"
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": "string"
+      }
+order: 2000

@@ -1,0 +1,9 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/session"
+method: GET
+headers:
+  Accept: application/json
+settings: {}
+examples: ./.resources/Get workstation defaults and a session CSRF token.resources/examples
+order: 2000

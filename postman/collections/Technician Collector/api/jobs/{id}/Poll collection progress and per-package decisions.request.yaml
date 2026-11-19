@@ -1,0 +1,14 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/jobs/:id"
+method: GET
+headers:
+  Accept: application/json
+pathVariables:
+  - key: id
+    value: string
+    disabled: false
+    description: "(Required) "
+settings: {}
+examples: ./.resources/Poll collection progress and per-package decisions.resources/examples
+order: 1000

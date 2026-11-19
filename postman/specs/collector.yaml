@@ -1,0 +1,276 @@
+openapi: 3.0.3
+info:
+  title: Code Marketplace Technician Collector
+  version: 0.2.0
+  description: Loopback-only workstation API. Every API request requires an unpredictable per-launch bearer capability delivered in the launch URL fragment, never by the public session endpoint. Mutations additionally require a same-origin request and the session CSRF header. No production publishing is performed.
+security: [{capability: []}]
+servers:
+  - url: http://127.0.0.1:38117
+tags:
+  - name: Collector
+paths:
+  /api/close:
+    post:
+      tags: [Collector]
+      operationId: closeCollector
+      summary: Stop the local program after downloads have finished
+      security: [{capability: [], csrf: []}]
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Program closing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  closing: {type: boolean}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/session:
+    get:
+      tags: [Collector]
+      operationId: getSession
+      summary: Get workstation defaults and a session CSRF token
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Current workstation configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [csrfToken, destination, platform]
+                properties:
+                  csrfToken: {type: string}
+                  destination: {type: string}
+                  platform: {type: string}
+  /api/search:
+    get:
+      tags: [Collector]
+      operationId: searchExtensions
+      summary: Search public VS Code Marketplace extension identities
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: {type: string, minLength: 2, maxLength: 200}
+        - in: query
+          name: page
+          schema: {type: integer, minimum: 1, maximum: 100, default: 1}
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Search results; verified refers only to the publisher domain badge
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries, page, hasMore]
+                properties:
+                  page: {type: integer}
+                  hasMore: {type: boolean}
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, publisher, verified, description, version]
+                      properties:
+                        id: {type: string}
+                        name: {type: string}
+                        publisher: {type: string}
+                        verified: {type: boolean}
+                        description: {type: string}
+                        version: {type: string}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '502': {$ref: '#/components/responses/Upstream'}
+  /api/folder:
+    post:
+      tags: [Collector]
+      operationId: chooseFolder
+      summary: Open the native Windows folder picker
+      security: [{capability: [], csrf: []}]
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Selected folder, or canceled true without changing the selection
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, canceled]
+                properties:
+                  path: {type: string}
+                  canceled: {type: boolean}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '500': {$ref: '#/components/responses/Invalid'}
+  /api/jobs:
+    post:
+      tags: [Collector]
+      operationId: collectPackages
+      summary: Collect selected packages and recursively include dependencies and extension-pack members
+      description: Creates a unique child folder below destination. Only one collection runs at a time. Completed packages survive partial failures and cancellation. Each package includes its original VSIX, matching signature archive, and signed publisher record.
+      security: [{capability: [], csrf: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ids, destination]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: {type: string}
+                destination: {type: string, minLength: 1}
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '202':
+          description: Collection accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    get:
+      tags: [Collector]
+      operationId: listJobs
+      summary: List the current process's recent collection jobs
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Up to twenty jobs, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items: {$ref: '#/components/schemas/Job'}
+  /api/jobs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/jobId'
+    get:
+      tags: [Collector]
+      operationId: getJob
+      summary: Poll collection progress and per-package decisions
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Current collection state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/jobs/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/jobId'
+    post:
+      tags: [Collector]
+      operationId: cancelJob
+      summary: Cancel pending downloads while retaining completed packages
+      security: [{capability: [], csrf: []}]
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Cancellation requested
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/jobs/{id}/open:
+    parameters:
+      - $ref: '#/components/parameters/jobId'
+    post:
+      tags: [Collector]
+      operationId: openJobFolder
+      summary: Open this job's output folder in the native file manager
+      security: [{capability: [], csrf: []}]
+      responses:
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '200':
+          description: Folder opened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  opened: {type: boolean}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  securitySchemes:
+    capability:
+      type: http
+      scheme: bearer
+      description: Per-launch capability from the private launch URL. Keep in tab session storage and clear the fragment before any requests. Invalid or missing credentials return 401.
+    csrf:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Token returned by GET /api/session. The Origin must also equal the loopback origin.
+  parameters:
+    jobId:
+      in: path
+      name: id
+      required: true
+      schema: {type: string}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+    Job:
+      type: object
+      required: [id, status, folder, requested, results, current, discovered, completed]
+      properties:
+        id: {type: string}
+        status: {type: string, enum: [running, completed, partial, failed, canceled]}
+        folder: {type: string}
+        requested: {type: array, items: {type: string}}
+        current: {type: string}
+        discovered: {type: integer}
+        completed: {type: integer}
+        error: {type: string}
+        results:
+          type: array
+          items:
+            type: object
+            required: [id, status, reason]
+            properties:
+              id: {type: string}
+              status: {type: string}
+              reason: {type: string}
+              error: {type: string}
+              version: {type: string}
+              verified: {type: boolean}
+              bytes: {type: integer, format: int64}
+  responses:
+    Unauthorized:
+      description: Missing or invalid launch capability
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Invalid:
+      description: Invalid input or local operation failed
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Upstream:
+      description: Marketplace request failed; retry the search
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: An operation is already running
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: Job not found
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}

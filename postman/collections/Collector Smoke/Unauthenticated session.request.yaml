@@ -1,0 +1,14 @@
+$kind: http-request
+name: Unauthenticated session
+method: GET
+url: '{{baseUrl}}/api/session'
+order: 500
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |
+      pm.test('Missing capability is rejected', () => pm.response.to.have.status(401));
+      pm.test('No session secrets returned', () => {
+        pm.expect(pm.response.json()).to.not.have.property('csrfToken');
+        pm.expect(pm.response.text()).to.not.include(pm.variables.get('accessToken'));
+      });

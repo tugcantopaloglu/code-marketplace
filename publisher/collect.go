@@ -87,7 +87,9 @@ func Collect(ctx context.Context, options CollectOptions) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := fetch(ctx, client, http.MethodPost, Marketplace+"/_apis/public/gallery/extensionquery", query, 16<<20)
+	// Large, long-lived extensions (Java, Continue, Jupyter) have metadata
+	// histories larger than 16 MiB. Keep a finite limit without rejecting them.
+	metadata, err := fetch(ctx, client, http.MethodPost, Marketplace+"/_apis/public/gallery/extensionquery", query, 64<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +228,7 @@ func fetch(ctx context.Context, client *http.Client, method, target string, body
 }
 
 func trustedURL(address *url.URL) bool {
-	if address == nil || address.Scheme != "https" || address.User != nil {
+	if address == nil || address.Scheme != "https" || address.User != nil || address.Fragment != "" || (address.Port() != "" && address.Port() != "443") {
 		return false
 	}
 	host := strings.ToLower(address.Hostname())

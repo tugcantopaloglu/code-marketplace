@@ -1,0 +1,13 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/folder"
+method: POST
+headers:
+  Accept: application/json
+auth:
+  type: bearer
+  credentials:
+    token: "{{bearerToken}}"
+settings: {}
+examples: ./.resources/Open the native Windows folder picker.resources/examples
+order: 4000

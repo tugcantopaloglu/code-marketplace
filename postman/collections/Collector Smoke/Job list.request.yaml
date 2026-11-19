@@ -1,0 +1,13 @@
+$kind: http-request
+name: Job list
+method: GET
+url: '{{baseUrl}}/api/jobs'
+order: 4000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |
+      pm.test('Jobs are an array', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().jobs).to.be.an('array');
+      });

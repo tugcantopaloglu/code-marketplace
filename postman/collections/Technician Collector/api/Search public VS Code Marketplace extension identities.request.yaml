@@ -1,0 +1,17 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/search?q=string&page=1"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  - key: q
+    value: string
+    disabled: false
+    description: "(Required) "
+  - key: page
+    value: "1"
+    disabled: false
+settings: {}
+examples: ./.resources/Search public VS Code Marketplace extension identities.resources/examples
+order: 3000

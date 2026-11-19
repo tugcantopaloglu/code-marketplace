@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Paket Toplayıcı · Code Marketplace</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V4h6l3 3h9v13H3Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 3h7v7m-1-6L10 14M10 4H4v16h16v-6"/></symbol>
+</defs></svg>
+<header>
+  <a class="brand" href="/" aria-label="Paket Toplayıcı ana ekranı"><span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>code-marketplace<span class="brand-section">/ paket toplayıcı</span></a>
+  <button id="close-app" class="quiet">Programı kapat</button>
+</header>
+<main>
+  <div id="notice" role="alert" hidden></div>
+  <div class="workspace">
+    <section class="search-area" aria-labelledby="search-heading">
+      <h1 id="search-heading">Eklenti bul ve indir</h1>
+      <p class="intro">Arayın, doğru paketi seçin. Gerekli diğer paketleri biz ekleyelim.</p>
+      <form id="search-form" role="search">
+        <label for="query">Eklenti ara</label>
+        <div class="search-controls"><div class="search-input"><svg class="icon"><use href="#i-search"/></svg><input id="query" name="query" type="search" minlength="2" maxlength="200" placeholder="Eklenti adı, yayıncı veya ID" autocomplete="off" required></div><button id="search-button" class="primary" type="submit">Ara</button></div>
+      </form>
+      <div class="results-heading"><span id="result-summary" role="status" aria-live="polite">Marketplace'de arayın</span><span class="hint">Verified: yayıncı alan adı doğrulanmış</span></div>
+      <div id="results" class="results" aria-busy="false"></div>
+      <div id="search-empty" class="empty">
+        <svg class="icon large"><use href="#i-search"/></svg>
+        <h2>Hangi eklentiye ihtiyacınız var?</h2>
+        <p>Adıyla veya <span class="mono">ms-python.python</span> gibi kimliğiyle arayın.</p>
+        <div class="suggestions" aria-label="Örnek aramalar"><button type="button" data-search="Python">Python</button><button type="button" data-search="Java">Java</button><button type="button" data-search="Docker">Docker</button><button type="button" data-search="PlantUML">PlantUML</button></div>
+      </div>
+      <div id="pagination" class="pagination" hidden><button id="previous">Önceki</button><span id="page-label">Sayfa 1</span><button id="next">Sonraki</button></div>
+    </section>
+    <aside class="selection" aria-labelledby="selection-heading">
+      <div class="selection-heading"><h2 id="selection-heading">Seçilenler <span id="selected-count">0</span></h2><button id="clear-selection" class="text-button" disabled>Temizle</button></div>
+      <div id="selected-list"></div>
+      <p id="selection-empty" class="muted selection-empty">İndirmek istediğiniz eklentileri arama sonuçlarından ekleyin.</p>
+      <div class="destination">
+        <label for="destination">Kayıt klasörü</label>
+        <div class="folder-controls"><input id="destination" type="text" spellcheck="false" aria-describedby="folder-help"><button id="choose-folder" class="icon-button" aria-label="Kayıt klasörünü seç" title="Klasör seç"><svg class="icon"><use href="#i-folder"/></svg></button></div>
+        <p id="folder-help" class="hint">Paketler bu klasörde ayrı bir aktarım klasörüne kaydedilir.</p>
+      </div>
+      <button id="download" class="primary download" disabled><svg class="icon"><use href="#i-download"/></svg><span>Seçilenleri indir</span></button>
+      <p class="automatic"><svg class="icon"><use href="#i-check"/></svg>Gerekli bağımlılıklar otomatik indirilir.</p>
+    </aside>
+  </div>
+  <section class="downloads" aria-labelledby="download-heading">
+    <div class="download-heading"><h2 id="download-heading">İndirme durumu</h2><div class="job-actions"><button id="cancel" hidden>İndirmeyi durdur</button><button id="open-folder" hidden><svg class="icon"><use href="#i-folder"/></svg>Klasörü aç</button></div></div>
+    <div id="download-empty" class="download-empty"><svg class="icon large"><use href="#i-download"/></svg><p>Henüz indirme başlatılmadı.</p></div>
+    <div id="job-state" hidden>
+      <p id="job-title" class="job-title" role="status" aria-live="polite"></p>
+      <p id="job-current" class="muted"></p>
+      <p id="job-folder" class="job-folder"></p>
+      <details id="job-details"><summary>Paket ayrıntıları <span id="job-count"></span></summary><div id="job-results"></div></details>
+      <button id="retry" hidden>Tekrar hazırla</button>
+    </div>
+  </section>
+</main>
+<footer><span id="connection">Yerel oturum açılıyor…</span><span>Code Marketplace · Windows x64 · kararlı paketler</span></footer>
+<template id="result-template"><article class="result-row"><label class="result-select"><input type="checkbox"><span class="result-copy"><span class="result-name"></span><span class="result-id"></span><span class="result-description"></span></span></label><div class="result-publisher"><span class="publisher-name"></span><span class="verified" hidden><svg class="icon"><use href="#i-check"/></svg>Verified</span><a class="official-link" target="_blank" rel="noopener noreferrer">Mağazada incele<svg class="icon"><use href="#i-link"/></svg></a></div></article></template>
+</body>
+</html>

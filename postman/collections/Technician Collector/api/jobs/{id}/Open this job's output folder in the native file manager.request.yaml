@@ -1,0 +1,18 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/jobs/:id/open"
+method: POST
+headers:
+  Accept: application/json
+pathVariables:
+  - key: id
+    value: string
+    disabled: false
+    description: "(Required) "
+auth:
+  type: bearer
+  credentials:
+    token: "{{bearerToken}}"
+settings: {}
+examples: ./.resources/Open this job's output folder in the native file manager.resources/examples
+order: 3000

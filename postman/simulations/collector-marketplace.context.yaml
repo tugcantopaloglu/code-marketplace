@@ -1,0 +1,30 @@
+purpose:
+  stands_in_for: The observed public Marketplace query and package/signature asset subset used by the workstation collector.
+  unblocks: Reproducible local tests for recursive collection, deduplication, offline admission, invalid signatures, upstream failure and cancellation.
+assumptions:
+  - id: gallery-shape-and-assets
+    status: supported
+    claim: The collector can use the observed extensionquery publisher/versions/files shape to collect matching original VSIX and signature assets.
+    reason: Existing collector source and the live Docker/Container Tools run on 2026-11-05 exercised these fields. The simulation models that subset, not all Marketplace behavior.
+    verification: TestCollectorAgainstPostmanSimulation passed normal, bad-signature, unavailable and slow/cancel scenarios. Normal collected three packages with duplicate and cyclic dependencies once each, and all three passed isolated offline importer admission. The 2026-11-05 live Docker collection produced two packages and both original signatures passed the installed Microsoft verifier with exit 0; both imported successfully with allowlist provenance validation. On 2026-11-19, all four simulation scenarios passed using in-memory fixtures with the Postman CLI sandbox enabled. A newly built Go 1.27.4 Windows collector downloaded Docker 2.0.0 and Container Tools 2.5.3, verified the generated transfer checksums and exported both packages for isolated allowlist admission.
+    source: collector/simulation_test.go; postman/mocks/marketplace/handler.cjs; publisher/collect.go; publisher/search.go; bin/collector-live/import-validation.json; bin/collector-simulation.ndjson
+    updated_at: '2026-11-19'
+  - id: fixture-signature-trust
+    status: unknown
+    claim: Synthetic test signature payloads establish Microsoft cryptographic certificate trust.
+    reason: They intentionally do not. The simulation tests archive/digest matching and the collector's signed provenance, not PKCS7 trust, TLS, or CDN redirect behavior.
+    verification: A mismatched signature archive was rejected and no VSIX was published. Separate live package verification used the installed Microsoft verifier, outside the shipped program.
+    source: testutil/extensions.go; collector/simulation_test.go; COLLECTOR.md
+    updated_at: '2026-11-05'
+  - id: owner-mock-discovery
+    status: unknown
+    claim: This local mock is the provider's authoritative published mock.
+    reason: It is a locally authored subset. The CLI session is signed out, so owner/workspace mock search was skipped. Orbit supplied only a partial download brief; repository source and live Marketplace evidence supplied the metadata/signature path.
+    verification: postman whoami reported no account; no cloud resources were created or published.
+    source: postman/mocks/marketplace/handler.cjs; COLLECTOR.md
+    updated_at: '2026-11-05'
+fingerprints:
+  - id: collector-first-version
+    date: '2026-11-05'
+    commit: uncommitted-workspace
+    cli: postman-1.75.0

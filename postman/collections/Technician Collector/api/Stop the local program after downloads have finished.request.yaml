@@ -1,0 +1,13 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/close"
+method: POST
+headers:
+  Accept: application/json
+auth:
+  type: bearer
+  credentials:
+    token: "{{bearerToken}}"
+settings: {}
+examples: ./.resources/Stop the local program after downloads have finished.resources/examples
+order: 1000

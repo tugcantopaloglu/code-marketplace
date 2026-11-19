@@ -1,0 +1,12 @@
+version: 1
+name: marketplace
+slug: marketplace
+protocol: http
+port: 4500
+interceptRequests: true
+origin:
+  - marketplace.visualstudio.com
+scenarios:
+  - name: default
+    path: ./handler.cjs
+    default: true

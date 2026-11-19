@@ -1,0 +1,9 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/jobs"
+method: GET
+headers:
+  Accept: application/json
+settings: {}
+examples: ./.resources/List the current process's recent collection jobs.resources/examples
+order: 2000

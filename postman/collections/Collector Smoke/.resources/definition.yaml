@@ -1,0 +1,13 @@
+$kind: collection
+name: Collector Smoke
+variables:
+  - key: baseUrl
+    value: http://127.0.0.1:38117
+scripts:
+  - type: http:beforeRequest
+    language: text/javascript
+    code: |
+      pm.request.headers.upsert({key: 'Origin', value: pm.variables.get('baseUrl')});
+      if (pm.info.requestName !== 'Unauthenticated session') pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + pm.variables.get('accessToken')});
+      const token = pm.collectionVariables.get('csrfToken');
+      if (token) pm.request.headers.upsert({key: 'X-CSRF-Token', value: token});

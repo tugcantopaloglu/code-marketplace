@@ -1,0 +1,92 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/jobs"
+  method: GET
+  headers:
+    - key: Authorization
+      value: Bearer <token>
+      description: "Added as a part of security scheme: bearer"
+    - key: Accept
+      value: application/json
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "jobs": [
+          {
+            "id": "string",
+            "status": "failed",
+            "folder": "string",
+            "requested": [
+              "string",
+              "string"
+            ],
+            "results": [
+              {
+                "id": "string",
+                "status": "string",
+                "reason": "string",
+                "error": "string",
+                "version": "string",
+                "verified": true,
+                "bytes": 2635
+              },
+              {
+                "id": "string",
+                "status": "string",
+                "reason": "string",
+                "error": "string",
+                "version": "string",
+                "verified": false,
+                "bytes": 2566
+              }
+            ],
+            "current": "string",
+            "discovered": 613,
+            "completed": 9361,
+            "error": "string"
+          },
+          {
+            "id": "string",
+            "status": "failed",
+            "folder": "string",
+            "requested": [
+              "string",
+              "string"
+            ],
+            "results": [
+              {
+                "id": "string",
+                "status": "string",
+                "reason": "string",
+                "error": "string",
+                "version": "string",
+                "verified": true,
+                "bytes": 4296
+              },
+              {
+                "id": "string",
+                "status": "string",
+                "reason": "string",
+                "error": "string",
+                "version": "string",
+                "verified": true,
+                "bytes": 1436
+              }
+            ],
+            "current": "string",
+            "discovered": 5619,
+            "completed": 1556,
+            "error": "string"
+          }
+        ]
+      }
+order: 1000

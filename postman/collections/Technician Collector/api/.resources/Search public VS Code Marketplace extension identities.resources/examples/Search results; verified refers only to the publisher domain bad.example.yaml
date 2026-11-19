@@ -1,0 +1,48 @@
+$kind: http-example
+name: Search results; verified refers only to the publisher domain badge
+request:
+  url: "{{baseUrl}}/api/search?q=string&page=1"
+  method: GET
+  headers:
+    - key: Authorization
+      value: Bearer <token>
+      description: "Added as a part of security scheme: bearer"
+    - key: Accept
+      value: application/json
+  queryParams:
+    q: string
+    page: "1"
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "entries": [
+          {
+            "id": "string",
+            "name": "string",
+            "publisher": "string",
+            "verified": false,
+            "description": "string",
+            "version": "string"
+          },
+          {
+            "id": "string",
+            "name": "string",
+            "publisher": "string",
+            "verified": false,
+            "description": "string",
+            "version": "string"
+          }
+        ],
+        "page": 5552,
+        "hasMore": false
+      }
+order: 1000

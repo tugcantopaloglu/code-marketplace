@@ -1,0 +1,61 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/jobs"
+  method: POST
+  headers:
+    - key: Authorization
+      value: Bearer <token>
+      description: "Added as a part of security scheme: bearer"
+    - key: Accept
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "ids": [
+          "string"
+        ],
+        "destination": "string"
+      }
+response:
+  statusCode: 202
+  statusText: Accepted
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "string",
+        "status": "partial",
+        "folder": "string",
+        "requested": [
+          "string",
+          "string"
+        ],
+        "results": [
+          {
+            "id": "string",
+            "status": "string",
+            "reason": "string",
+            "error": "string",
+            "version": "string",
+            "verified": false,
+            "bytes": 4456
+          },
+          {
+            "id": "string",
+            "status": "string",
+            "reason": "string",
+            "error": "string",
+            "version": "string",
+            "verified": false,
+            "bytes": 3333
+          }
+        ],
+        "current": "string",
+        "discovered": 9258,
+        "completed": 5987,
+        "error": "string"
+      }
+order: 1000

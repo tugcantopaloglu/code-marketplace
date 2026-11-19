@@ -1,0 +1,24 @@
+$kind: http-request
+name: Collect selected packages and recursively include dependencies and extension-pack members
+description: Creates a unique child folder below destination. Only one collection runs at a time. Completed packages survive partial failures and cancellation. Each package includes its original VSIX, matching signature archive, and signed publisher record.
+url: "{{baseUrl}}/api/jobs"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "ids": [
+        "string"
+      ],
+      "destination": "string"
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{bearerToken}}"
+settings: {}
+examples: ./.resources/Collect selected packages and recursively include dependencies a.resources/examples
+order: 1000

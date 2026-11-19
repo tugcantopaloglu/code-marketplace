@@ -1,0 +1,11 @@
+$kind: collection
+description: Loopback-only workstation API. Every API request requires an unpredictable per-launch bearer capability delivered in the launch URL fragment, never by the public session endpoint. Mutations additionally require a same-origin request and the session CSRF header. No production publishing is performed.
+variables:
+  baseUrl: http://127.0.0.1:38117
+  bearerToken: ""
+auth:
+  - id: bbca682c-ed34-478b-bf4a-b49c2d7529cb
+    type: bearer
+    name: bearer auth
+    credentials:
+      token: "{{bearerToken}}"

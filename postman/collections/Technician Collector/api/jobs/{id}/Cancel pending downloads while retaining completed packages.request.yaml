@@ -1,0 +1,18 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/jobs/:id/cancel"
+method: POST
+headers:
+  Accept: application/json
+pathVariables:
+  - key: id
+    value: string
+    disabled: false
+    description: "(Required) "
+auth:
+  type: bearer
+  credentials:
+    token: "{{bearerToken}}"
+settings: {}
+examples: ./.resources/Cancel pending downloads while retaining completed packages.resources/examples
+order: 2000

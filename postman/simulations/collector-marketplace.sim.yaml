@@ -1,0 +1,13 @@
+# Simulation scaffold. Add fault-injection scenarios under each mock, e.g.:
+#   scenarios:
+#     - overrides:
+#         conditions:
+#           latency: { delay_ms: 500 }
+# Then serve it with: postman simulation run <this file>
+
+simulation: collector-marketplace
+routing: path
+mocks:
+  - name: marketplace
+    routeKey: marketplace
+    path: ../mocks/marketplace/config.yaml

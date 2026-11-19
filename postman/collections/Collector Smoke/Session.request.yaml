@@ -1,0 +1,16 @@
+$kind: http-request
+name: Session
+method: GET
+url: '{{baseUrl}}/api/session'
+order: 1000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |
+      pm.test('Session is available', () => pm.response.to.have.status(200));
+      const body = pm.response.json();
+      pm.test('CSRF and default folder are present', () => {
+        pm.expect(body.csrfToken).to.be.a('string').and.have.length.above(20);
+        pm.expect(body.destination).to.be.a('string').and.not.empty;
+      });
+      pm.collectionVariables.set('csrfToken', body.csrfToken);
